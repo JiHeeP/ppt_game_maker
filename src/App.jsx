@@ -134,7 +134,8 @@ const App = () => {
       const finalCount = selectedGame.id === 1 ? count * 2 : count;
 
       // We pass the apiKey (might be empty) - the backend will use its own if ours is empty.
-      const questions = await generateQuizQuestions(apiKey, topic, detailedTopic, finalCount, grade, selectedGame.name, pdfText, pdfData)
+      const topicForModel = detailedTopic ? `${topic} [필수 조건: ${detailedTopic}]` : topic
+      const questions = await generateQuizQuestions(apiKey, topicForModel, detailedTopic, finalCount, grade, selectedGame.name, pdfText, pdfData)
 
       setLoadingStatus(`${selectedGame.name} 파일을 생성하고 있습니다...`)
 

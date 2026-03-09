@@ -182,13 +182,22 @@ const buildQuizPrompt = ({ topic, detailedTopic, requestedCount, grade, gameName
 
             ${pdfInstruction}
 
-            [공통 규칙]
+            [절대 규칙]
             1. 모든 문항은 핵심 주제에 정확히 맞아야 합니다.
             2. 상세 요청이 있으면 모든 문항이 그 조건을 함께 만족해야 합니다.
-            3. 정답은 명확하고 사실에 근거해야 합니다.
-            4. 학년에 맞는 난이도와 표현을 사용하세요.
-            5. 코드 블록이나 설명 없이 JSON 배열만 출력하세요.
-            6. 출력의 첫 글자는 '[' 이고 마지막 글자는 ']' 이어야 합니다.
+            3. 상세 요청을 한 문항이라도 어기면 전체 결과는 실패입니다.
+            4. PDF 참고자료가 있으면 자료 범위를 벗어나지 말고, 자료와 충돌하는 추측을 하지 마세요.
+            5. 정답은 명확하고 사실에 근거해야 합니다.
+            6. 학년에 맞는 난이도와 표현을 사용하세요.
+            7. 주제가 한국어이고 해석이 여러 개인 경우, 한국 초등학교/중학교 수업 문맥에서 가장 자연스러운 의미를 우선하세요.
+            8. 코드 블록이나 설명 없이 JSON 배열만 출력하세요.
+            9. 출력의 첫 글자는 '[' 이고 마지막 글자는 ']' 이어야 합니다.
+
+            [출력 전 자체 점검]
+            - 모든 문항이 주제를 벗어나지 않았는가?
+            - 모든 문항이 상세 요청을 빠짐없이 만족하는가?
+            - 애매한 해석 대신 학년과 한국 학교 수업 맥락에 맞는가?
+            - 문항 수가 정확히 ${requestedCount}개인가?
 
             [JSON 형식]
             [
@@ -231,9 +240,13 @@ const validateDetailedRequestCompliance = async ({
         문항 수: ${requestedCount}
         게임 유형: ${gameName}
 
-        [중요]
-        상세 요청은 핵심 주제의 일부입니다.
-        각 문항은 "주제 + 상세 요청"을 함께 만족해야 합니다.
+        [엄격한 판정 기준]
+        1. 각 문항은 핵심 주제와 상세 요청을 동시에 만족해야 합니다.
+        2. 한 문항이라도 위반하면 전체 세트는 불합격입니다.
+        3. 주제가 한국어이고 해석이 여러 가지면 한국 학교 수업 맥락의 의미를 우선하세요.
+        4. PDF 참고자료가 있으면 그 범위를 벗어나지 마세요.
+        5. 질문과 정답에 사실 오류가 있으면 불합격입니다.
+        6. 기준을 어긴 문항이 있으면 기존 배열을 부분 수정하지 말고, 조건에 맞는 새 배열 전체를 다시 작성하세요.
 
         [PDF 참고]
         ${pdfSummary}
@@ -242,10 +255,11 @@ const validateDetailedRequestCompliance = async ({
         ${JSON.stringify(questions, null, 2)}
 
         [작업]
-        1. 문항들이 상세 요청까지 충실히 반영했는지 검수하세요.
-        2. 하나라도 어긋나면 전체 문항 배열을 조건에 맞게 수정하세요.
-        3. 문항 수는 반드시 ${requestedCount}개를 유지하세요.
-        4. 결과는 아래 JSON 객체만 출력하세요.
+        1. 문항 세트를 검수하세요.
+        2. 위반이 없으면 isValid를 true로 두고 questions에 검수 완료 배열을 넣으세요.
+        3. 위반이 있으면 isValid를 false로 두고 issues에 문제점을 적고, questions에는 조건을 모두 만족하도록 새로 작성한 전체 배열을 넣으세요.
+        4. 문항 수는 반드시 ${requestedCount}개를 유지하세요.
+        5. 결과는 아래 JSON 객체만 출력하세요.
 
         {
           "isValid": true,
@@ -260,10 +274,10 @@ const validateDetailedRequestCompliance = async ({
         const completion = await client.chat.completions.create({
             model: "moonshot-v1-32k",
             messages: [
-                { role: "system", content: "당신은 초등 및 중등 수업용 퀴즈를 검수하고 수정하는 AI입니다." },
+                { role: "system", content: "당신은 요구사항 위반을 엄격하게 잡아내는 수업용 퀴즈 검수 AI입니다. 한 문항이라도 조건을 어기면 전체 세트를 불합격 처리합니다." },
                 { role: "user", content: validationPrompt }
             ],
-            temperature: 0.1,
+            temperature: 0,
             max_tokens: 4096,
         });
 
@@ -288,6 +302,116 @@ const validateDetailedRequestCompliance = async ({
 
     console.warn("Detailed request validation fallback: returning original generated questions.");
     return questions;
+};
+
+const auditDetailedRequestCompliance = async ({
+    client,
+    topic,
+    detailedTopic,
+    requestedCount,
+    grade,
+    gameName,
+    pdfContext,
+    questions
+}) => {
+    if (!detailedTopic?.trim()) {
+        return { isValid: true, issues: [] };
+    }
+
+    const pdfSummary = pdfContext
+        ? `PDF 참고자료가 있습니다.\n${pdfContext.substring(0, 8000)}`
+        : "PDF 참고자료는 없습니다.";
+
+    const auditPrompt = `
+        [감사 대상]
+        주제: ${topic}
+        상세 요청: ${detailedTopic}
+        학년: ${grade}
+        문항 수: ${requestedCount}
+        게임 유형: ${gameName}
+
+        [판정 원칙]
+        1. 각 문항은 주제와 상세 요청을 동시에 만족해야 합니다.
+        2. 한 문항이라도 위반하면 전체 세트는 불합격입니다.
+        3. 주제가 한국어이고 해석이 여러 개면 한국 학교 수업 맥락을 우선합니다.
+        4. PDF가 있으면 그 범위를 벗어나면 안 됩니다.
+        5. 질문과 정답에 사실 오류가 있으면 불합격입니다.
+
+        [PDF 참고]
+        ${pdfSummary}
+
+        [문항]
+        ${JSON.stringify(questions, null, 2)}
+
+        아래 형식의 JSON 객체만 출력하세요.
+        {
+          "isValid": true,
+          "issues": []
+        }
+    `;
+
+    const completion = await client.chat.completions.create({
+        model: "moonshot-v1-32k",
+        messages: [
+            { role: "system", content: "당신은 요구사항 위반을 엄격하게 판정하는 퀴즈 감사 AI입니다." },
+            { role: "user", content: auditPrompt }
+        ],
+        temperature: 0,
+        max_tokens: 1500,
+    });
+
+    const text = completion.choices[0].message.content || "";
+    try {
+        const parsed = parseJsonObject(text);
+        return {
+            isValid: parsed.isValid !== false,
+            issues: Array.isArray(parsed.issues) ? parsed.issues : []
+        };
+    } catch {
+        const preview = text.slice(0, 300).replace(/\s+/g, ' ');
+        console.error("Audit Parse Error. Preview:", preview);
+        return { isValid: true, issues: [] };
+    }
+};
+
+const regenerateQuestionsFromIssues = async ({
+    client,
+    topic,
+    detailedTopic,
+    requestedCount,
+    grade,
+    gameName,
+    pdfContext,
+    issues
+}) => {
+    const pdfInstruction = buildPdfInstruction(pdfContext);
+    const issueList = issues.length > 0 ? issues.map((issue, index) => `${index + 1}. ${issue}`).join("\n") : "상세 요청 준수 실패";
+
+    const regenerationPrompt = `
+        ${buildQuizPrompt({ topic, detailedTopic, requestedCount, grade, gameName, pdfInstruction })}
+
+        [이전 결과의 실패 사유]
+        ${issueList}
+
+        [재생성 지시]
+        - 기존 문항을 부분 수정하지 말고 ${requestedCount}개 전체를 처음부터 새로 작성하세요.
+        - 상세 요청을 어기는 문항이 하나도 없어야 합니다.
+        - 애매한 해석이 가능하면 한국 학교 수업 맥락의 의미를 우선하세요.
+    `;
+
+    const completion = await client.chat.completions.create({
+        model: "moonshot-v1-32k",
+        messages: [
+            { role: "system", content: "당신은 요구사항 위반을 수정하기 위해 전체 문제 세트를 새로 생성하는 AI입니다." },
+            { role: "user", content: regenerationPrompt }
+        ],
+        temperature: 0,
+        max_tokens: 4096,
+    });
+
+    const text = completion.choices[0].message.content || "";
+    const parsed = parseQuizArray(text);
+    return normalizeQuestions(parsed, requestedCount);
 };
 
 // Quiz Generation Endpoint
@@ -359,6 +483,7 @@ app.post('/api/generate-quiz', async (req, res) => {
                 messages: [
                     { role: "system", content: "당신은 교육용 퀴즈를 생성하는 AI 어시스턴트입니다." },
                     { role: "user", content: promptText },
+                    { role: "user", content: "상세 요청은 주제와 같은 급의 핵심 조건입니다. 한 문항이라도 상세 요청을 어기면 전체 응답은 실패입니다. 모든 문항이 주제, 상세 요청, 학년, 자료 범위를 동시에 만족하는지 스스로 점검한 뒤 출력하세요." },
                     ...(attempt > 0
                         ? [{
                             role: "user",
@@ -366,7 +491,7 @@ app.post('/api/generate-quiz', async (req, res) => {
                         }]
                         : [])
                 ],
-                temperature: 0.3,
+                temperature: 0.1,
                 max_tokens: 4096,
             });
 
@@ -412,6 +537,30 @@ app.post('/api/generate-quiz', async (req, res) => {
             pdfContext,
             questions: normalized
         });
+
+        const audit = await auditDetailedRequestCompliance({
+            client: activeClient,
+            topic,
+            detailedTopic,
+            requestedCount,
+            grade,
+            gameName,
+            pdfContext,
+            questions: normalized
+        });
+
+        if (!audit.isValid) {
+            normalized = await regenerateQuestionsFromIssues({
+                client: activeClient,
+                topic,
+                detailedTopic,
+                requestedCount,
+                grade,
+                gameName,
+                pdfContext,
+                issues: audit.issues
+            });
+        }
 
         res.json(normalized);
 
