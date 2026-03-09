@@ -329,9 +329,7 @@ export const getPungiyoTemplate = (topic, questions, grade) => {
                     <tbody>
                         ${Array.from({ length: 10 }).map((_, i) => `
                             <tr style="height: 105px;">
-                                <td style="border: 2px solid #000; padding: 15px; font-size: 18px; font-weight: bold; line-height: 1.4; word-break: keep-all;">
-                                    ${finalQuestions[i]?.question || ''}
-                                </td>
+                                <td style="border: 2px solid #000;"></td>
                                 <td style="border: 2px solid #000;"></td>
                                 <td style="border: 2px solid #000;"></td>
                                 <td style="border: 2px solid #000; text-align: center; font-size: 28px; font-weight: 900; background: #fffcf0;">
