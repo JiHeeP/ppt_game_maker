@@ -2,7 +2,16 @@
  * AI Service to generate educational quiz questions based on a topic and count.
  * Now calls Netlify Function to protect API key.
  */
-export const generateQuizQuestions = async (apiKey, topic, count, grade = "", gameName = "", pdfContext = "", pdfData = null) => {
+export const generateQuizQuestions = async (
+    apiKey,
+    topic,
+    detailedTopic = "",
+    count,
+    grade = "",
+    gameName = "",
+    pdfContext = "",
+    pdfData = null
+) => {
     try {
         const configuredEndpoint = import.meta.env.VITE_QUIZ_API_ENDPOINT?.trim();
         const endpoints = configuredEndpoint
@@ -15,7 +24,7 @@ export const generateQuizQuestions = async (apiKey, topic, count, grade = "", ga
                 ]
                 : ['/.netlify/functions/api'];
 
-        const payload = JSON.stringify({ apiKey, topic, count, grade, gameName, pdfContext, pdfData });
+        const payload = JSON.stringify({ apiKey, topic, detailedTopic, count, grade, gameName, pdfContext, pdfData });
         let lastError;
 
         for (const endpoint of endpoints) {

@@ -118,10 +118,182 @@ const parseQuizArray = (rawText) => {
     throw new Error("AI Format Error: Failed to parse quiz data.");
 };
 
+const parseJsonObject = (rawText) => {
+    if (!rawText || typeof rawText !== 'string') {
+        throw new Error("AI Format Error: Empty response from AI.");
+    }
+
+    const normalized = rawText
+        .replace(/^\uFEFF/, "")
+        .replace(/[“”]/g, '"')
+        .replace(/[‘’]/g, "'");
+
+    const candidates = [normalized.trim()];
+    const fencedBlocks = [...normalized.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)];
+    fencedBlocks.forEach(match => candidates.push(match[1].trim()));
+
+    const objectMatch = normalized.match(/\{[\s\S]*\}/);
+    if (objectMatch) {
+        candidates.push(objectMatch[0].trim());
+    }
+
+    for (const candidate of candidates) {
+        const repaired = candidate.replace(/,\s*([}\]])/g, "$1");
+        try {
+            const parsed = JSON.parse(repaired);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                return parsed;
+            }
+        } catch {
+            continue;
+        }
+    }
+
+    throw new Error("AI Format Error: Failed to parse validation payload.");
+};
+
+const buildPdfInstruction = (pdfContext) => {
+    if (!pdfContext) return "";
+
+    return `
+            [주요 참고 자료 - PDF 내용]
+            아래 내용은 사용자가 업로드한 자료 PDF에서 추출한 텍스트입니다.
+            문제와 정답은 가능한 한 이 자료를 충실히 반영해 주세요.
+            자료 내용:
+            ${pdfContext.substring(0, 30000)}
+    `;
+};
+
+const buildQuizPrompt = ({ topic, detailedTopic, requestedCount, grade, gameName, pdfInstruction }) => `
+            [핵심 주제]
+            ${topic}
+
+            ${detailedTopic ? `[상세 요청 - 주제와 동일한 핵심 조건]
+            ${detailedTopic}
+
+            상세 요청은 부가 설명이 아닙니다.
+            반드시 모든 문항에 일관되게 반영해야 하며, 주제와 동일한 중요도로 다뤄야 합니다.
+            ` : ''}
+
+            [기본 정보]
+            대상 학년: ${grade}
+            문항 수: ${requestedCount}
+            게임 유형: ${gameName}
+
+            ${pdfInstruction}
+
+            [공통 규칙]
+            1. 모든 문항은 핵심 주제에 정확히 맞아야 합니다.
+            2. 상세 요청이 있으면 모든 문항이 그 조건을 함께 만족해야 합니다.
+            3. 정답은 명확하고 사실에 근거해야 합니다.
+            4. 학년에 맞는 난이도와 표현을 사용하세요.
+            5. 코드 블록이나 설명 없이 JSON 배열만 출력하세요.
+            6. 출력의 첫 글자는 '[' 이고 마지막 글자는 ']' 이어야 합니다.
+
+            [JSON 형식]
+            [
+                { "question": "질문 내용", "answer": "정답", "wrongAnswer": "오답" }
+            ]
+        `;
+
+const normalizeQuestions = (questions, requestedCount) => (
+    questions.slice(0, requestedCount).map(q => ({
+        ...q,
+        question: q.question || "질문 없음",
+        answer: q.answer || "정답 없음",
+        wrongAnswer: q.wrongAnswer || "오답 없음"
+    }))
+);
+
+const validateDetailedRequestCompliance = async ({
+    client,
+    topic,
+    detailedTopic,
+    requestedCount,
+    grade,
+    gameName,
+    pdfContext,
+    questions
+}) => {
+    if (!detailedTopic?.trim()) {
+        return questions;
+    }
+
+    const pdfSummary = pdfContext
+        ? `PDF 참고자료가 있으며, 아래 텍스트 범위 안에서 벗어나지 않도록 검수하세요.\n${pdfContext.substring(0, 12000)}`
+        : "PDF 참고자료는 없습니다.";
+
+    const validationPrompt = `
+        [검수 대상]
+        핵심 주제: ${topic}
+        상세 요청: ${detailedTopic}
+        대상 학년: ${grade}
+        문항 수: ${requestedCount}
+        게임 유형: ${gameName}
+
+        [중요]
+        상세 요청은 핵심 주제의 일부입니다.
+        각 문항은 "주제 + 상세 요청"을 함께 만족해야 합니다.
+
+        [PDF 참고]
+        ${pdfSummary}
+
+        [생성된 문항]
+        ${JSON.stringify(questions, null, 2)}
+
+        [작업]
+        1. 문항들이 상세 요청까지 충실히 반영했는지 검수하세요.
+        2. 하나라도 어긋나면 전체 문항 배열을 조건에 맞게 수정하세요.
+        3. 문항 수는 반드시 ${requestedCount}개를 유지하세요.
+        4. 결과는 아래 JSON 객체만 출력하세요.
+
+        {
+          "isValid": true,
+          "issues": [],
+          "questions": [
+            { "question": "질문 내용", "answer": "정답", "wrongAnswer": "오답" }
+          ]
+        }
+    `;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        const completion = await client.chat.completions.create({
+            model: "moonshot-v1-32k",
+            messages: [
+                { role: "system", content: "당신은 초등 및 중등 수업용 퀴즈를 검수하고 수정하는 AI입니다." },
+                { role: "user", content: validationPrompt }
+            ],
+            temperature: 0.1,
+            max_tokens: 4096,
+        });
+
+        const text = completion.choices[0].message.content || "";
+
+        try {
+            const parsed = parseJsonObject(text);
+            if (!Array.isArray(parsed.questions) || parsed.questions.length < requestedCount) {
+                throw new Error("AI Validation Error: Incomplete corrected quiz array.");
+            }
+
+            const normalized = normalizeQuestions(parsed.questions, requestedCount);
+            if (parsed.isValid === false && Array.isArray(parsed.issues) && parsed.issues.length > 0) {
+                console.warn("Detailed request validation corrected quiz issues:", parsed.issues);
+            }
+            return normalized;
+        } catch {
+            const preview = text.slice(0, 300).replace(/\s+/g, ' ');
+            console.error("Validation Parse Error. Preview:", preview);
+        }
+    }
+
+    console.warn("Detailed request validation fallback: returning original generated questions.");
+    return questions;
+};
+
 // Quiz Generation Endpoint
 app.post('/api/generate-quiz', async (req, res) => {
     try {
-        const { topic, count, grade, gameName, pdfContext, pdfData, apiKey: clientApiKey } = req.body;
+        const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData, apiKey: clientApiKey } = req.body;
 
         // Use client API key if provided, otherwise fallback to server env
         let activeClient = openai;
@@ -146,8 +318,16 @@ app.post('/api/generate-quiz', async (req, res) => {
         }
 
         const requestedCount = Number(count) || 10;
+        pdfInstruction = buildPdfInstruction(pdfContext);
 
         const promptText = `
+            [핵심 주제]
+            ${topic}
+
+            ${detailedTopic?.trim() ? `[상세 요청 - 주제와 동일한 핵심 조건]
+            ${detailedTopic}
+            상세 요청은 반드시 모든 문항에 반영해야 하며 주제와 동일한 중요도로 다뤄야 합니다.
+            ` : ''}
             주제: ${topic}
             대상 학년: ${grade}
             문항 수: ${requestedCount}
@@ -215,12 +395,23 @@ app.post('/api/generate-quiz', async (req, res) => {
         }
 
         // Normalize
-        const normalized = questions.slice(0, requestedCount).map(q => ({
+        let normalized = questions.slice(0, requestedCount).map(q => ({
             ...q,
             question: q.question || "질문 없음",
             answer: q.answer || "정답 없음",
             wrongAnswer: q.wrongAnswer || "정답 아님"
         }));
+
+        normalized = await validateDetailedRequestCompliance({
+            client: activeClient,
+            topic,
+            detailedTopic,
+            requestedCount,
+            grade,
+            gameName,
+            pdfContext,
+            questions: normalized
+        });
 
         res.json(normalized);
 
