@@ -318,7 +318,8 @@ const validateDetailedRequestCompliance = async ({
     grade,
     gameName,
     pdfContext,
-    questions
+    questions,
+    remainingMs = () => 60000
 }) => {
     if (!detailedTopic?.trim()) {
         return questions;
@@ -385,7 +386,12 @@ const validateDetailedRequestCompliance = async ({
         }
     `;
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    {
+        if (remainingMs() < 10000) {
+            console.warn(`Skipping validation API call: only ${remainingMs()}ms remaining`);
+            return questions;
+        }
+        console.log(`Calling validation API (${remainingMs()}ms remaining)`);
         const completion = await client.chat.completions.create({
             model: "moonshot-v1-32k",
             messages: [
@@ -558,6 +564,10 @@ export const handler = async (event, context) => {
     }
 
     try {
+        const FUNCTION_START = Date.now();
+        const TIME_LIMIT_MS = 55000; // Netlify 60s 제한에서 5s 여유
+        const remainingMs = () => Math.max(0, TIME_LIMIT_MS - (Date.now() - FUNCTION_START));
+
         const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData, apiKey: clientApiKey } = JSON.parse(event.body);
         const apiKey = clientApiKey || process.env.KIMI_API_KEY || process.env.GEMINI_API_KEY;
 
@@ -572,7 +582,7 @@ export const handler = async (event, context) => {
         const openai = new OpenAI({
             apiKey: apiKey,
             baseURL: "https://api.moonshot.ai/v1",
-            timeout: 30000,
+            timeout: 25000,
         });
 
         let pdfInstruction = "";
@@ -630,7 +640,11 @@ export const handler = async (event, context) => {
         let lastParseError;
 
         for (let attempt = 0; attempt < 2; attempt += 1) {
-            console.log(`Calling Kimi API... attempt ${attempt + 1}`);
+            if (attempt > 0 && remainingMs() < 20000) {
+                console.warn(`Skipping generation retry: only ${remainingMs()}ms remaining`);
+                break;
+            }
+            console.log(`Calling Kimi API... attempt ${attempt + 1} (${remainingMs()}ms remaining)`);
             const completion = await openai.chat.completions.create({
                 model: "moonshot-v1-32k",
                 messages: [
@@ -649,7 +663,7 @@ export const handler = async (event, context) => {
             });
 
             const text = completion.choices[0].message.content || "";
-            console.log("AI Response received");
+            console.log(`AI Response received (${remainingMs()}ms remaining)`);
 
             try {
                 const parsed = parseQuizArray(text);
@@ -679,30 +693,8 @@ export const handler = async (event, context) => {
             wrongAnswer: q.wrongAnswer || "정답 아님"
         }));
 
-        normalized = await validateDetailedRequestCompliance({
-            client: openai,
-            topic,
-            detailedTopic,
-            requestedCount,
-            grade,
-            gameName,
-            pdfContext,
-            questions: normalized
-        });
-
-        const audit = await auditDetailedRequestCompliance({
-            client: openai,
-            topic,
-            detailedTopic,
-            requestedCount,
-            grade,
-            gameName,
-            pdfContext,
-            questions: normalized
-        });
-
-        if (!audit.isValid) {
-            normalized = await regenerateQuestionsFromIssues({
+        if (remainingMs() > 15000) {
+            normalized = await validateDetailedRequestCompliance({
                 client: openai,
                 topic,
                 detailedTopic,
@@ -710,8 +702,11 @@ export const handler = async (event, context) => {
                 grade,
                 gameName,
                 pdfContext,
-                issues: audit.issues
+                questions: normalized,
+                remainingMs
             });
+        } else {
+            console.warn(`Skipping validation: only ${remainingMs()}ms remaining`);
         }
 
         return {

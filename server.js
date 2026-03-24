@@ -21,7 +21,7 @@ if (!serverApiKey) {
 const openai = new OpenAI({
     apiKey: serverApiKey,
     baseURL: "https://api.moonshot.ai/v1",
-    timeout: 30000,
+    timeout: 25000,
 });
 
 const extractObjectsFromTruncatedArray = (sourceText) => {
@@ -342,7 +342,8 @@ const validateDetailedRequestCompliance = async ({
     grade,
     gameName,
     pdfContext,
-    questions
+    questions,
+    remainingMs = () => 60000
 }) => {
     if (!detailedTopic?.trim()) {
         return questions;
@@ -409,7 +410,12 @@ const validateDetailedRequestCompliance = async ({
         }
     `;
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    {
+        if (remainingMs() < 10000) {
+            console.warn(`Skipping validation API call: only ${remainingMs()}ms remaining`);
+            return questions;
+        }
+        console.log(`Calling validation API (${remainingMs()}ms remaining)`);
         const completion = await client.chat.completions.create({
             model: "moonshot-v1-32k",
             messages: [
@@ -566,6 +572,10 @@ const regenerateQuestionsFromIssues = async ({
 // Quiz Generation Endpoint
 app.post('/api/generate-quiz', async (req, res) => {
     try {
+        const FUNCTION_START = Date.now();
+        const TIME_LIMIT_MS = 55000;
+        const remainingMs = () => Math.max(0, TIME_LIMIT_MS - (Date.now() - FUNCTION_START));
+
         const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData, apiKey: clientApiKey } = req.body;
 
         // Use client API key if provided, otherwise fallback to server env
@@ -574,6 +584,7 @@ app.post('/api/generate-quiz', async (req, res) => {
             activeClient = new OpenAI({
                 apiKey: clientApiKey,
                 baseURL: "https://api.moonshot.ai/v1",
+                timeout: 25000,
             });
         }
 
@@ -626,7 +637,11 @@ app.post('/api/generate-quiz', async (req, res) => {
         let lastParseError;
 
         for (let attempt = 0; attempt < 2; attempt += 1) {
-            console.log(`Calling Kimi API (Moonshot)... attempt ${attempt + 1}`);
+            if (attempt > 0 && remainingMs() < 20000) {
+                console.warn(`Skipping generation retry: only ${remainingMs()}ms remaining`);
+                break;
+            }
+            console.log(`Calling Kimi API (Moonshot)... attempt ${attempt + 1} (${remainingMs()}ms remaining)`);
             const completion = await activeClient.chat.completions.create({
                 model: "moonshot-v1-32k",
                 messages: [
@@ -645,7 +660,7 @@ app.post('/api/generate-quiz', async (req, res) => {
             });
 
             const text = completion.choices[0].message.content || "";
-            console.log("AI Response received");
+            console.log(`AI Response received (${remainingMs()}ms remaining)`);
 
             try {
                 const parsed = parseQuizArray(text);
@@ -676,30 +691,8 @@ app.post('/api/generate-quiz', async (req, res) => {
             wrongAnswer: q.wrongAnswer || "정답 아님"
         }));
 
-        normalized = await validateDetailedRequestCompliance({
-            client: activeClient,
-            topic,
-            detailedTopic,
-            requestedCount,
-            grade,
-            gameName,
-            pdfContext,
-            questions: normalized
-        });
-
-        const audit = await auditDetailedRequestCompliance({
-            client: activeClient,
-            topic,
-            detailedTopic,
-            requestedCount,
-            grade,
-            gameName,
-            pdfContext,
-            questions: normalized
-        });
-
-        if (!audit.isValid) {
-            normalized = await regenerateQuestionsFromIssues({
+        if (remainingMs() > 15000) {
+            normalized = await validateDetailedRequestCompliance({
                 client: activeClient,
                 topic,
                 detailedTopic,
@@ -707,8 +700,11 @@ app.post('/api/generate-quiz', async (req, res) => {
                 grade,
                 gameName,
                 pdfContext,
-                issues: audit.issues
+                questions: normalized,
+                remainingMs
             });
+        } else {
+            console.warn(`Skipping validation: only ${remainingMs()}ms remaining`);
         }
 
         res.json(normalized);
