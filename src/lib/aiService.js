@@ -37,12 +37,12 @@ export const generateQuizQuestions = async (
 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    let errorMessage = 'Quiz generation request failed';
+                    let errorMessage = `서버 오류 (${response.status})`;
                     try {
                         const errorBody = JSON.parse(errorText);
-                        errorMessage = errorBody.error || errorMessage;
+                        errorMessage = errorBody.error || errorBody.errorMessage || errorBody.message || errorMessage;
                     } catch {
-                        errorMessage = `${response.status} ${response.statusText}: ${errorText}`;
+                        errorMessage = `${response.status} ${response.statusText}: ${errorText.slice(0, 200)}`;
                     }
                     throw new Error(errorMessage);
                 }
