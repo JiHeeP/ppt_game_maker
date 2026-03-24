@@ -564,10 +564,6 @@ export const handler = async (event, context) => {
     }
 
     try {
-        const FUNCTION_START = Date.now();
-        const TIME_LIMIT_MS = 55000; // Netlify 60s 제한에서 5s 여유
-        const remainingMs = () => Math.max(0, TIME_LIMIT_MS - (Date.now() - FUNCTION_START));
-
         const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData, apiKey: clientApiKey } = JSON.parse(event.body);
         const apiKey = clientApiKey || process.env.KIMI_API_KEY || process.env.GEMINI_API_KEY;
 
@@ -582,50 +578,23 @@ export const handler = async (event, context) => {
         const openai = new OpenAI({
             apiKey: apiKey,
             baseURL: "https://api.moonshot.ai/v1",
-            timeout: 25000,
+            timeout: 28000,
         });
 
-        let pdfInstruction = "";
-
-        if (pdfContext) {
-            pdfInstruction = `
-            [주요 참고 자료 - PDF 내용]
-            선생님이 업로드한 텍스트 내용:
-            ${pdfContext.substring(0, 30000)}
-            `;
-        }
-
         const requestedCount = Number(count) || 10;
-        pdfInstruction = buildPdfInstruction(pdfContext);
+        const pdfInstruction = buildPdfInstruction(pdfContext);
 
-        const promptText = `
-            [핵심 주제]
-            ${topic}
-
-            ${detailedTopic?.trim() ? `[상세 요청 - 주제와 동일한 핵심 조건]
-            ${detailedTopic}
-            상세 요청은 반드시 모든 문항에 반영해야 하며 주제와 동일한 중요도로 다뤄야 합니다.
-            ` : ''}
-            주제: ${topic}
-            대상 학년: ${grade}
-            문항 수: ${requestedCount}
-            게임 유형: ${gameName}
-            
-            당신은 초등/중등 교사를 돕는 전문 퀴즈 출제 위원입니다. 
-            위 주제에 대해 한국어로 작성해 주세요.
-            ${pdfInstruction}
-            
-            [공통 규칙]
-            1. 질문은 명확하고 이해하기 쉬워야 합니다.
-            2. 정답은 확실한 사실에 기반해야 합니다.
-            3. 아래의 JSON 형식을 엄격히 지켜서 출력하세요. 코드 블록(\`\`\`json) 등 부가적인 설명 없이 오직 JSON 배열만 출력하세요.
-            4. 출력의 첫 글자는 '[' 이고 마지막 글자는 ']' 이어야 합니다.
-            
-            [JSON 형식]
-            [
-                { "question": "질문 내용", "answer": "정답", "wrongAnswer": "오답" }
-            ]
-        `;
+        // 휴리스틱 fallback 체크 (API 호출 없이 즉시 반환)
+        if (detailedTopic?.trim()) {
+            const fallbackQuestions = getTopicFallbackQuestions(topic, detailedTopic, requestedCount);
+            if (fallbackQuestions) {
+                return {
+                    statusCode: 200,
+                    headers,
+                    body: JSON.stringify(fallbackQuestions)
+                };
+            }
+        }
 
         const strictPromptText = buildQuizPrompt({
             topic,
@@ -636,77 +605,37 @@ export const handler = async (event, context) => {
             pdfInstruction
         });
 
-        let questions;
-        let lastParseError;
+        // 단일 API 호출 - 30초 제한 내에서 1번만 호출
+        console.log("Calling Kimi API (single attempt, 30s Netlify limit)");
+        const completion = await openai.chat.completions.create({
+            model: "moonshot-v1-32k",
+            messages: [
+                { role: "system", content: "당신은 교육용 퀴즈를 생성하는 AI 어시스턴트입니다. 반드시 JSON 배열만 출력하세요." },
+                { role: "user", content: strictPromptText },
+            ],
+            temperature: 0.1,
+            max_tokens: 4096,
+        });
 
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-            if (attempt > 0 && remainingMs() < 20000) {
-                console.warn(`Skipping generation retry: only ${remainingMs()}ms remaining`);
-                break;
-            }
-            console.log(`Calling Kimi API... attempt ${attempt + 1} (${remainingMs()}ms remaining)`);
-            const completion = await openai.chat.completions.create({
-                model: "moonshot-v1-32k",
-                messages: [
-                    { role: "system", content: "당신은 교육용 퀴즈를 생성하는 AI 어시스턴트입니다." },
-                    { role: "user", content: strictPromptText },
-                    { role: "user", content: "상세 요청은 주제와 같은 급의 핵심 조건입니다. 한 문항이라도 상세 요청을 어기면 전체 응답은 실패입니다. 모든 문항이 주제, 상세 요청, 학년, 자료 범위를 동시에 만족하는지 스스로 점검한 뒤 출력하세요." },
-                    ...(attempt > 0
-                        ? [{
-                            role: "user",
-                            content: `이전 응답이 JSON 형식 오류 또는 잘림 상태였습니다. 반드시 ${requestedCount}개 문항의 JSON 배열만 다시 출력하세요.`
-                        }]
-                        : [])
-                ],
-                temperature: 0.1,
-                max_tokens: 4096,
-            });
+        const text = completion.choices[0].message.content || "";
+        console.log("AI Response received");
 
-            const text = completion.choices[0].message.content || "";
-            console.log(`AI Response received (${remainingMs()}ms remaining)`);
-
-            try {
-                const parsed = parseQuizArray(text);
-                if (!Array.isArray(parsed) || parsed.length === 0) {
-                    throw new Error("AI Format Error: Empty quiz array.");
-                }
-                if (parsed.length < requestedCount && attempt === 0) {
-                    throw new Error("AI Format Error: Incomplete quiz array.");
-                }
-                questions = parsed;
-                break;
-            } catch (error) {
-                lastParseError = error;
-                const preview = text.slice(0, 300).replace(/\s+/g, ' ');
-                console.error("JSON Parse Error. Preview:", preview);
-            }
+        const parsed = parseQuizArray(text);
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+            throw new Error("AI Format Error: Empty quiz array.");
         }
 
-        if (!questions) {
-            throw new Error(lastParseError?.message || "AI Format Error: Failed to parse quiz data.");
-        }
-
-        let normalized = questions.slice(0, requestedCount).map(q => ({
-            ...q,
-            question: q.question || "질문 없음",
-            answer: q.answer || "정답 없음",
-            wrongAnswer: q.wrongAnswer || "정답 아님"
-        }));
-
-        if (remainingMs() > 15000) {
-            normalized = await validateDetailedRequestCompliance({
-                client: openai,
-                topic,
-                detailedTopic,
-                requestedCount,
-                grade,
-                gameName,
-                pdfContext,
-                questions: normalized,
-                remainingMs
-            });
-        } else {
-            console.warn(`Skipping validation: only ${remainingMs()}ms remaining`);
+        // 휴리스틱 검증 (API 호출 없이 로컬에서만)
+        let normalized = normalizeQuestions(parsed, requestedCount);
+        if (detailedTopic?.trim()) {
+            const heuristicIssues = getHeuristicIssues(topic, detailedTopic, normalized);
+            if (heuristicIssues.length > 0) {
+                console.warn("Heuristic issues found:", heuristicIssues);
+                const fallback = getTopicFallbackQuestions(topic, detailedTopic, requestedCount);
+                if (fallback) {
+                    normalized = fallback;
+                }
+            }
         }
 
         return {
