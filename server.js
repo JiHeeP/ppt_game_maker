@@ -21,6 +21,7 @@ if (!serverApiKey) {
 const openai = new OpenAI({
     apiKey: serverApiKey,
     baseURL: "https://api.moonshot.ai/v1",
+    timeout: 30000,
 });
 
 const extractObjectsFromTruncatedArray = (sourceText) => {

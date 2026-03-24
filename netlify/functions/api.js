@@ -572,6 +572,7 @@ export const handler = async (event, context) => {
         const openai = new OpenAI({
             apiKey: apiKey,
             baseURL: "https://api.moonshot.ai/v1",
+            timeout: 30000,
         });
 
         let pdfInstruction = "";
@@ -721,10 +722,12 @@ export const handler = async (event, context) => {
 
     } catch (error) {
         console.error("Function Error:", error);
+        const errorMessage = error.message || 'Unknown server error';
+        const statusCode = error.status || 500;
         return {
-            statusCode: 500,
+            statusCode,
             headers,
-            body: JSON.stringify({ error: error.message })
+            body: JSON.stringify({ error: errorMessage })
         };
     }
 };
