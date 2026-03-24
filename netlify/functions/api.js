@@ -572,7 +572,7 @@ export const handler = async (event, context) => {
         const openai = new OpenAI({
             apiKey: apiKey,
             baseURL: "https://api.moonshot.ai/v1",
-            timeout: 30000,
+            timeout: 55000,
         });
 
         let pdfInstruction = "";
@@ -689,30 +689,6 @@ export const handler = async (event, context) => {
             pdfContext,
             questions: normalized
         });
-
-        const audit = await auditDetailedRequestCompliance({
-            client: openai,
-            topic,
-            detailedTopic,
-            requestedCount,
-            grade,
-            gameName,
-            pdfContext,
-            questions: normalized
-        });
-
-        if (!audit.isValid) {
-            normalized = await regenerateQuestionsFromIssues({
-                client: openai,
-                topic,
-                detailedTopic,
-                requestedCount,
-                grade,
-                gameName,
-                pdfContext,
-                issues: audit.issues
-            });
-        }
 
         return {
             statusCode: 200,

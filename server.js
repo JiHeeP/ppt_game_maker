@@ -687,30 +687,6 @@ app.post('/api/generate-quiz', async (req, res) => {
             questions: normalized
         });
 
-        const audit = await auditDetailedRequestCompliance({
-            client: activeClient,
-            topic,
-            detailedTopic,
-            requestedCount,
-            grade,
-            gameName,
-            pdfContext,
-            questions: normalized
-        });
-
-        if (!audit.isValid) {
-            normalized = await regenerateQuestionsFromIssues({
-                client: activeClient,
-                topic,
-                detailedTopic,
-                requestedCount,
-                grade,
-                gameName,
-                pdfContext,
-                issues: audit.issues
-            });
-        }
-
         res.json(normalized);
 
     } catch (error) {
