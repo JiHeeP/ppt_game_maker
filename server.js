@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
+import { getSpecialTopicFallbackQuestions } from './shared/topicFallbacks.js';
 
 dotenv.config();
 
@@ -259,12 +260,75 @@ const getTopicReferenceFacts = (topic = "", detailedTopic = "") => {
     return facts;
 };
 
+const isGcdPracticeRequest = (topic = "", detailedTopic = "") => {
+    const merged = `${topic} ${detailedTopic}`.toLowerCase();
+    return merged.includes("최대공약수")
+        && (
+            merged.includes("두 수")
+            || merged.includes("두수")
+            || merged.includes("찾기")
+            || merged.includes("구하기")
+            || merged.includes("계산")
+        );
+};
+
+const createGcdPracticeQuestions = (requestedCount = 10) => {
+    const gcdValues = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
+    const multiplierPairs = [
+        [2, 3], [3, 4], [3, 5], [4, 5], [4, 7],
+        [5, 6], [5, 7], [7, 8], [3, 8], [5, 9]
+    ];
+    const questions = [];
+    const usedPairs = new Set();
+
+    for (const gcdValue of gcdValues) {
+        for (const [leftMultiplier, rightMultiplier] of multiplierPairs) {
+            const left = gcdValue * leftMultiplier;
+            const right = gcdValue * rightMultiplier;
+            if (left > 100 || right > 100) continue;
+
+            const pairKey = [left, right].sort((a, b) => a - b).join("-");
+            if (usedPairs.has(pairKey)) continue;
+            usedPairs.add(pairKey);
+
+            const wrongCandidates = [
+                Number.isInteger(gcdValue / 2) ? gcdValue / 2 : null,
+                gcdValue - 1,
+                gcdValue + 1,
+                gcdValue * 2,
+                1
+            ].filter(candidate => Number.isInteger(candidate) && candidate > 0 && candidate !== gcdValue);
+
+            questions.push({
+                question: `${left}와 ${right}의 최대공약수는?`,
+                answer: String(gcdValue),
+                wrongAnswer: String(wrongCandidates[0] ?? 1)
+            });
+
+            if (questions.length >= requestedCount) {
+                return questions;
+            }
+        }
+    }
+
+    return questions;
+};
+
 const getTopicFallbackQuestions = (topic = "", detailedTopic = "", requestedCount = 10) => {
+    const specialFallback = getSpecialTopicFallbackQuestions(topic, detailedTopic, requestedCount);
+    if (specialFallback) {
+        return specialFallback;
+    }
+
     const merged = `${topic} ${detailedTopic}`.toLowerCase();
     const mentionsFraction = merged.includes("\uBD84\uC218");
     const wantsProperFractions = merged.includes("\uC9C4\uBD84\uC218");
     const wantsSameDenominator = merged.includes("\uBD84\uBAA8\uAC00 \uAC19\uC740") || merged.includes("\uAC19\uC740 \uBD84\uBAA8");
     const wantsExpressionOnly = merged.includes("\uC2DD") || merged.includes("\uBB38\uC7A5\uC81C \uAE08\uC9C0");
+
+    if (isGcdPracticeRequest(topic, detailedTopic)) {
+        return createGcdPracticeQuestions(requestedCount);
+    }
 
     if (mentionsFraction && wantsProperFractions && wantsSameDenominator && wantsExpressionOnly) {
         const bank = [
