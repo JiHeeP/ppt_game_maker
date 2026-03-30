@@ -1,8 +1,6 @@
-const GCD_CONSTRAINT_SIGNALS = ["이상", "이하", "조건", "크", "작", "범위", "제한", "only", ">=", "<=", "=<"];
-
 export const isGcdPracticeRequest = (topic = "", detailedTopic = "") => {
     const merged = `${topic} ${detailedTopic}`.toLowerCase();
-    const isGcdTopic = merged.includes("최대공약수")
+    return merged.includes("최대공약수")
         && (
             merged.includes("두 수")
             || merged.includes("두수")
@@ -10,12 +8,23 @@ export const isGcdPracticeRequest = (topic = "", detailedTopic = "") => {
             || merged.includes("구하기")
             || merged.includes("계산")
         );
-    if (!isGcdTopic) return false;
+};
 
-    const hasConstraints = GCD_CONSTRAINT_SIGNALS.some(s => merged.includes(s));
-    if (hasConstraints) return false;
+const parseGcdConstraints = (topic = "", detailedTopic = "") => {
+    const merged = `${topic} ${detailedTopic}`;
+    let minGcd = 2;
+    let maxGcd = Infinity;
 
-    return true;
+    const minMatch = merged.match(/(\d+)\s*(?:이상|<=\s*최대|=<\s*최대)/);
+    if (minMatch) minGcd = Math.max(minGcd, Number(minMatch[1]));
+
+    const minMatch2 = merged.match(/(?:최대\s*공약수\s*)?(?:>=?|=<)\s*(\d+)/);
+    if (minMatch2) minGcd = Math.max(minGcd, Number(minMatch2[1]));
+
+    const maxMatch = merged.match(/(\d+)\s*이하/);
+    if (maxMatch) maxGcd = Math.min(maxGcd, Number(maxMatch[1]));
+
+    return { minGcd, maxGcd };
 };
 
 const MATH_TOPIC_MARKER = "수학";
@@ -64,17 +73,22 @@ export const getMathTopicPreference = (topic = "", detailedTopic = "") => {
     };
 };
 
-const createGcdPracticeQuestions = (requestedCount = 10) => {
-    const gcdValues = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
-    const multiplierPairs = [
-        [2, 3], [3, 4], [3, 5], [4, 5], [4, 7],
-        [5, 6], [5, 7], [7, 8], [3, 8], [5, 9]
-    ];
-    const questions = [];
-    const usedPairs = new Set();
+const ALL_GCD_VALUES = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 15, 16, 18, 20, 24, 25];
+const MULTIPLIER_PAIRS = [
+    [2, 3], [3, 4], [3, 5], [4, 5], [4, 7],
+    [5, 6], [5, 7], [7, 8], [3, 8], [5, 9],
+    [2, 5], [2, 7], [3, 7], [2, 9], [4, 9]
+];
 
-    for (const gcdValue of gcdValues) {
-        for (const [leftMultiplier, rightMultiplier] of multiplierPairs) {
+const createGcdPracticeQuestions = (requestedCount = 10, minGcd = 2, maxGcd = Infinity) => {
+    const gcdValues = ALL_GCD_VALUES.filter(v => v >= minGcd && v <= maxGcd);
+    if (gcdValues.length === 0) return [];
+
+    const usedPairs = new Set();
+    const allCandidates = [];
+
+    for (const [leftMultiplier, rightMultiplier] of MULTIPLIER_PAIRS) {
+        for (const gcdValue of gcdValues) {
             const left = gcdValue * leftMultiplier;
             const right = gcdValue * rightMultiplier;
             if (left > 100 || right > 100) continue;
@@ -91,24 +105,21 @@ const createGcdPracticeQuestions = (requestedCount = 10) => {
                 1
             ].filter(candidate => Number.isInteger(candidate) && candidate > 0 && candidate !== gcdValue);
 
-            questions.push({
+            allCandidates.push({
                 question: `${left}와 ${right}의 최대공약수는?`,
                 answer: String(gcdValue),
                 wrongAnswer: String(wrongCandidates[0] ?? 1)
             });
-
-            if (questions.length >= requestedCount) {
-                return questions;
-            }
         }
     }
 
-    return questions;
+    return allCandidates.slice(0, requestedCount);
 };
 
 export const getSpecialTopicFallbackQuestions = (topic = "", detailedTopic = "", requestedCount = 10) => {
     if (isGcdPracticeRequest(topic, detailedTopic)) {
-        return createGcdPracticeQuestions(requestedCount);
+        const { minGcd, maxGcd } = parseGcdConstraints(topic, detailedTopic);
+        return createGcdPracticeQuestions(requestedCount, minGcd, maxGcd);
     }
 
     return null;
