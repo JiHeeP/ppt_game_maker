@@ -97,7 +97,7 @@ export const generatePungiyoPDF = async (topic, questions, grade) => {
     }
 };
 
-function addPungiyoSlide(pres, title, items, topic) {
+function addPungiyoSlide(pres, title, items, _topic) {
     let slide = pres.addSlide();
     slide.background = { color: THEME.bg };
 
@@ -111,7 +111,7 @@ function addPungiyoSlide(pres, title, items, topic) {
     });
 }
 
-function addPungiyoQuestionSlide(pres, num, question, topic) {
+function addPungiyoQuestionSlide(pres, num, question, _topic) {
     let slide = pres.addSlide();
     slide.background = { color: THEME.bg };
 

@@ -22,6 +22,8 @@ import { generateQuizQuestions } from './lib/aiService'
 
 import './App.css'
 
+const MotionDiv = motion.div
+
 const MoveIcon = (props) => (
   <svg {...props} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="5 9 2 12 5 15"></polyline><polyline points="9 5 12 2 15 5"></polyline><polyline points="15 19 12 22 9 19"></polyline><polyline points="19 9 22 12 19 15"></polyline><line x1="2" y1="12" x2="22" y2="12"></line><line x1="12" y1="2" x2="12" y2="22"></line></svg>
 );
@@ -56,7 +58,6 @@ const App = () => {
   const [showSettings, setShowSettings] = useState(false)
   // Always consider "key saved" as true if we have a backend key OR a local key. 
   // For simplicity, we'll allow generation to proceed and handle errors from the backend.
-  const [isKeySaved, setIsKeySaved] = useState(true)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [activeTab, setActiveTab] = useState('대시보드')
   const [library, setLibrary] = useState(JSON.parse(localStorage.getItem('game_library') || '[]'))
@@ -75,7 +76,6 @@ const App = () => {
     localStorage.setItem('kimi_api_key', apiKey)
     localStorage.setItem('user_name', userName)
     localStorage.setItem('student_count', studentCount)
-    setIsKeySaved(!!apiKey)
     setShowSettings(false)
     alert('프로필 정보가 저장되었습니다.')
   }
@@ -344,7 +344,7 @@ const App = () => {
               </div>
               <div className="selection-grid">
                 {GAMES.map((game, idx) => (
-                  <motion.div
+                  <MotionDiv
                     key={game.id}
                     className={`game-card ${selectedGame?.id === game.id ? 'active' : ''}`}
                     initial={{ opacity: 0, y: 20 }}
@@ -365,7 +365,7 @@ const App = () => {
                       <h3>{game.name}</h3>
                       <p>{game.description}</p>
                     </div>
-                  </motion.div>
+                  </MotionDiv>
                 ))}
               </div>
             </main>
@@ -384,7 +384,7 @@ const App = () => {
             ) : (
               <div className="library-grid">
                 {library.map((item) => (
-                  <motion.div
+                  <MotionDiv
                     key={item.id}
                     className="library-item"
                     initial={{ opacity: 0, y: 10 }}
@@ -402,7 +402,7 @@ const App = () => {
                     <button className="btn-download-sm" onClick={() => handleDownload(item)}>
                       <Sparkles size={16} /> 다시 다운로드
                     </button>
-                  </motion.div>
+                  </MotionDiv>
                 ))}
               </div>
             )}
@@ -413,10 +413,10 @@ const App = () => {
       {/* Loading Overlay */}
       < AnimatePresence >
         {isGenerating && (
-          <motion.div className="loading-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <MotionDiv className="loading-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
             <div className="loading-circle"></div>
             <p style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--primary)' }}>{loadingStatus || '생성 중...'}</p>
-          </motion.div>
+          </MotionDiv>
         )}
       </AnimatePresence >
 
@@ -424,7 +424,7 @@ const App = () => {
       < AnimatePresence >
         {showSettings && (
           <div className="modal-overlay" onClick={() => setShowSettings(false)}>
-            <motion.div
+            <MotionDiv
               className="modal-card"
               onClick={e => e.stopPropagation()}
               initial={{ scale: 0.9, opacity: 0 }}
@@ -481,7 +481,7 @@ const App = () => {
                 </p>
                 <button className="btn-generate" onClick={saveProfile} style={{ width: '100%', justifyContent: 'center', padding: '1.2rem' }}>저장하기</button>
               </div>
-            </motion.div>
+            </MotionDiv>
           </div>
         )}
       </AnimatePresence >
