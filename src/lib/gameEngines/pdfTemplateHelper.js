@@ -352,11 +352,17 @@ export const getTopTenMatchTemplate = (topic, pairs) => {
     // Row 1 & Row 2 are pairs (4 columns)
     // Row 3 & Row 4 are pairs (4 columns)
 
+    const pad = (arr) => {
+        const padded = arr.slice(0, 4);
+        while (padded.length < 4) padded.push('');
+        return padded;
+    };
+
     const grid = [
-        pairs.slice(0, 4).map(p => p.question), // Row 1 (Problems)
-        pairs.slice(0, 4).map(p => p.answer),   // Row 2 (Answers for Row 1)
-        pairs.slice(4, 8).map(p => p.question), // Row 3 (Problems)
-        pairs.slice(4, 8).map(p => p.answer)    // Row 4 (Answers for Row 3)
+        pad(pairs.slice(0, 4).map(p => p.question)),
+        pad(pairs.slice(0, 4).map(p => p.answer)),
+        pad(pairs.slice(4, 8).map(p => p.question)),
+        pad(pairs.slice(4, 8).map(p => p.answer))
     ];
 
     return `

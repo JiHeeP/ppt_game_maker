@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
-import { getSpecialTopicFallbackQuestions } from './shared/topicFallbacks.js';
+import { getTopicFallbackQuestions, getHeuristicIssues, buildQuizPrompt, normalizeQuestions } from './shared/quizPrompt.js';
 
 dotenv.config();
 
@@ -226,237 +226,6 @@ const buildPdfInstruction = (pdfContext) => {
     `;
 };
 
-const getTopicSpecificGuidance = (topic = "", detailedTopic = "") => {
-    const merged = `${topic} ${detailedTopic}`.toLowerCase();
-    const guidance = [];
-
-    const mentionsSamguk = merged.includes("삼국");
-    const mentionsChina = merged.includes("중국") || merged.includes("삼국지");
-    if (mentionsSamguk && !mentionsChina) {
-        guidance.push("이 주제의 삼국 시대는 한국사 문맥의 고구려, 백제, 신라를 의미합니다.");
-        guidance.push("위, 촉, 오, 중국 삼국지, 고려, 가야를 정답 또는 핵심 개념으로 사용하지 마세요.");
-    }
-
-    if (merged.includes("조선")) {
-        guidance.push("조선 관련 주제는 한국사 교과 맥락을 기준으로 다루고, 중국 왕조사로 혼동하지 마세요.");
-    }
-
-    return guidance;
-};
-
-const getTopicReferenceFacts = (topic = "", detailedTopic = "") => {
-    const merged = `${topic} ${detailedTopic}`.toLowerCase();
-    const facts = [];
-
-    const mentionsSamguk = merged.includes("\uC0BC\uAD6D");
-    const mentionsChina = merged.includes("\uC911\uAD6D") || merged.includes("\uC0BC\uAD6D\uC9C0");
-    if (mentionsSamguk && !mentionsChina) {
-        facts.push("\uC0BC\uAD6D \uC2DC\uB300\uC758 \uC138 \uB098\uB77C\uB294 \uACE0\uAD6C\uB824, \uBC31\uC81C, \uC2E0\uB77C\uC785\uB2C8\uB2E4.");
-        facts.push("\uACE0\uAD6C\uB824\uB97C \uC138\uC6B4 \uC0AC\uB78C\uC740 \uC8FC\uBABD, \uBC31\uC81C\uB97C \uC138\uC6B4 \uC0AC\uB78C\uC740 \uC628\uC870\uC785\uB2C8\uB2E4.");
-        facts.push("\uC2E0\uB77C\uB97C \uC138\uC6B4 \uC0AC\uB78C\uC740 \uBC15\uD601\uAC70\uC138\uC785\uB2C8\uB2E4.");
-        facts.push("\uBB38\uC81C\uB294 \uC704 \uAC19\uC740 \uAE30\uBCF8 \uAD50\uACFC \uC0AC\uC2E4 \uC548\uC5D0\uC11C\uB9CC \uB9CC\uB4E4\uACE0, \uBD88\uD655\uC2E4\uD55C \uC138\uBD80 \uC0AC\uC2E4\uC740 \uC4F0\uC9C0 \uB9C8\uC138\uC694.");
-    }
-
-    return facts;
-};
-
-const isGcdPracticeRequest = (topic = "", detailedTopic = "") => {
-    const merged = `${topic} ${detailedTopic}`.toLowerCase();
-    return merged.includes("최대공약수")
-        && (
-            merged.includes("두 수")
-            || merged.includes("두수")
-            || merged.includes("찾기")
-            || merged.includes("구하기")
-            || merged.includes("계산")
-        );
-};
-
-const createGcdPracticeQuestions = (requestedCount = 10) => {
-    const gcdValues = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12];
-    const multiplierPairs = [
-        [2, 3], [3, 4], [3, 5], [4, 5], [4, 7],
-        [5, 6], [5, 7], [7, 8], [3, 8], [5, 9]
-    ];
-    const questions = [];
-    const usedPairs = new Set();
-
-    for (const gcdValue of gcdValues) {
-        for (const [leftMultiplier, rightMultiplier] of multiplierPairs) {
-            const left = gcdValue * leftMultiplier;
-            const right = gcdValue * rightMultiplier;
-            if (left > 100 || right > 100) continue;
-
-            const pairKey = [left, right].sort((a, b) => a - b).join("-");
-            if (usedPairs.has(pairKey)) continue;
-            usedPairs.add(pairKey);
-
-            const wrongCandidates = [
-                Number.isInteger(gcdValue / 2) ? gcdValue / 2 : null,
-                gcdValue - 1,
-                gcdValue + 1,
-                gcdValue * 2,
-                1
-            ].filter(candidate => Number.isInteger(candidate) && candidate > 0 && candidate !== gcdValue);
-
-            questions.push({
-                question: `${left}와 ${right}의 최대공약수는?`,
-                answer: String(gcdValue),
-                wrongAnswer: String(wrongCandidates[0] ?? 1)
-            });
-
-            if (questions.length >= requestedCount) {
-                return questions;
-            }
-        }
-    }
-
-    return questions;
-};
-
-const getTopicFallbackQuestions = (topic = "", detailedTopic = "", requestedCount = 10) => {
-    const specialFallback = getSpecialTopicFallbackQuestions(topic, detailedTopic, requestedCount);
-    if (specialFallback) {
-        return specialFallback;
-    }
-
-    const merged = `${topic} ${detailedTopic}`.toLowerCase();
-    const mentionsFraction = merged.includes("\uBD84\uC218");
-    const wantsProperFractions = merged.includes("\uC9C4\uBD84\uC218");
-    const wantsSameDenominator = merged.includes("\uBD84\uBAA8\uAC00 \uAC19\uC740") || merged.includes("\uAC19\uC740 \uBD84\uBAA8");
-    const wantsExpressionOnly = merged.includes("\uC2DD") || merged.includes("\uBB38\uC7A5\uC81C \uAE08\uC9C0");
-
-    if (isGcdPracticeRequest(topic, detailedTopic)) {
-        return createGcdPracticeQuestions(requestedCount);
-    }
-
-    if (mentionsFraction && wantsProperFractions && wantsSameDenominator && wantsExpressionOnly) {
-        const bank = [
-            { question: "1/4 + 2/4 = ?", answer: "3/4", wrongAnswer: "4/4" },
-            { question: "1/5 + 3/5 = ?", answer: "4/5", wrongAnswer: "2/5" },
-            { question: "2/7 + 4/7 = ?", answer: "6/7", wrongAnswer: "5/7" },
-            { question: "3/8 + 1/8 = ?", answer: "4/8", wrongAnswer: "5/8" },
-            { question: "5/6 + 1/6 = ?", answer: "6/6", wrongAnswer: "4/6" },
-            { question: "2/9 + 3/9 = ?", answer: "5/9", wrongAnswer: "6/9" },
-            { question: "1/3 + 1/3 = ?", answer: "2/3", wrongAnswer: "3/3" },
-            { question: "4/10 + 3/10 = ?", answer: "7/10", wrongAnswer: "8/10" },
-            { question: "2/11 + 5/11 = ?", answer: "7/11", wrongAnswer: "6/11" },
-            { question: "3/12 + 4/12 = ?", answer: "7/12", wrongAnswer: "8/12" }
-        ];
-        return bank.slice(0, requestedCount);
-    }
-
-    const mentionsSamguk = merged.includes("\uC0BC\uAD6D");
-    const mentionsChina = merged.includes("\uC911\uAD6D") || merged.includes("\uC0BC\uAD6D\uC9C0");
-    const mentionsKoreanClassroomContext =
-        merged.includes("\uD55C\uAD6D\uC0AC")
-        || merged.includes("\uACE0\uAD6C\uB824")
-        || merged.includes("\uBC31\uC81C")
-        || merged.includes("\uC2E0\uB77C");
-
-    if (!(mentionsSamguk && !mentionsChina && mentionsKoreanClassroomContext)) {
-        return null;
-    }
-
-    const bank = [
-        { question: "\uC0BC\uAD6D \uC2DC\uB300\uC758 \uC138 \uB098\uB77C\uB294 \uBB34\uC5C7\uC778\uAC00\uC694?", answer: "\uACE0\uAD6C\uB824, \uBC31\uC81C, \uC2E0\uB77C", wrongAnswer: "\uACE0\uAD6C\uB824, \uAC00\uC57C, \uACE0\uB824" },
-        { question: "\uACE0\uAD6C\uB824\uB97C \uC138\uC6B4 \uC0AC\uB78C\uC740 \uB204\uAD6C\uC778\uAC00\uC694?", answer: "\uC8FC\uBABD", wrongAnswer: "\uC628\uC870" },
-        { question: "\uBC31\uC81C\uB97C \uC138\uC6B4 \uC0AC\uB78C\uC740 \uB204\uAD6C\uC778\uAC00\uC694?", answer: "\uC628\uC870", wrongAnswer: "\uC8FC\uBABD" },
-        { question: "\uC2E0\uB77C\uB97C \uC138\uC6B4 \uC0AC\uB78C\uC740 \uB204\uAD6C\uC778\uAC00\uC694?", answer: "\uBC15\uD601\uAC70\uC138", wrongAnswer: "\uAE40\uC720\uC2E0" },
-        { question: "\uAD11\uAC1C\uD1A0\uB300\uC655\uC740 \uC5B4\uB290 \uB098\uB77C\uC758 \uC655\uC778\uAC00\uC694?", answer: "\uACE0\uAD6C\uB824", wrongAnswer: "\uC2E0\uB77C" },
-        { question: "\uAE40\uC720\uC2E0\uACFC \uAD00\uB828\uC774 \uAE4A\uC740 \uB098\uB77C\uB294 \uC5B4\uB514\uC778\uAC00\uC694?", answer: "\uC2E0\uB77C", wrongAnswer: "\uBC31\uC81C" },
-        { question: "\uAE08\uAD00\uC744 \uB9CE\uC774 \uB0A8\uAE34 \uB098\uB77C\uB85C \uC54C\uB824\uC9C4 \uC0BC\uAD6D\uC740 \uC5B4\uB290 \uB098\uB77C\uC778\uAC00\uC694?", answer: "\uC2E0\uB77C", wrongAnswer: "\uACE0\uAD6C\uB824" },
-        { question: "\uD55C\uAC15 \uC720\uC5ED\uC744 \uC911\uC2EC\uC73C\uB85C \uBC1C\uC804\uD55C \uB098\uB77C\uB85C \uBC30\uC6B0\uB294 \uC0BC\uAD6D\uC740 \uBCF4\uD1B5 \uC5B4\uB290 \uB098\uB77C\uC778\uAC00\uC694?", answer: "\uBC31\uC81C", wrongAnswer: "\uC2E0\uB77C" },
-        { question: "\uC0BC\uAD6D \uAC00\uC6B4\uB370 \uC0BC\uAD6D \uD1B5\uC77C\uC744 \uC774\uB8EC \uB098\uB77C\uB294 \uC5B4\uB514\uC778\uAC00\uC694?", answer: "\uC2E0\uB77C", wrongAnswer: "\uACE0\uAD6C\uB824" },
-        { question: "\uACE0\uAD6C\uB824, \uBC31\uC81C, \uC2E0\uB77C\uB97C \uD568\uAED8 \uBD80\uB974\uB294 \uB9D0\uC740 \uBB34\uC5C7\uC778\uAC00\uC694?", answer: "\uC0BC\uAD6D", wrongAnswer: "\uC0BC\uAD6D\uC9C0" }
-    ];
-
-    return bank.slice(0, requestedCount);
-};
-
-const getHeuristicIssues = (topic = "", detailedTopic = "", questions = []) => {
-    const merged = `${topic} ${detailedTopic}`.toLowerCase();
-    const serialized = JSON.stringify(questions);
-    const issues = [];
-
-    const mentionsSamguk = merged.includes("삼국");
-    const mentionsChina = merged.includes("중국") || merged.includes("삼국지");
-    if (mentionsSamguk && !mentionsChina) {
-        const bannedTerms = ["위", "촉", "오", "중국", "삼국지", "고려", "가야"];
-        const found = bannedTerms.filter(term => serialized.includes(term));
-        if (found.length > 0) {
-            issues.push(`삼국 시대를 한국사 문맥으로 해석하지 못했고 금지어가 포함됨: ${found.join(", ")}`);
-        }
-    }
-
-    if (mentionsSamguk && !mentionsChina) {
-        const suspiciousTerms = ['"援щ젮"', "吏꾧뎄??", "??異⑥쇅??"];
-        const suspiciousFound = suspiciousTerms.filter(term => serialized.includes(term));
-        if (suspiciousFound.length > 0) {
-            issues.push(`?쇨뎅 ?쒕? 臾명빆??湲곕낯 ?섏꽌 ?ъ떎???꾧굅濡?蹂댁씠?섎뒗 ?⑥뼱媛 ?ы븿?? ${suspiciousFound.join(", ")}`);
-        }
-    }
-
-    return issues;
-};
-
-const buildQuizPrompt = ({ topic, detailedTopic, requestedCount, grade, gameName, pdfInstruction }) => `
-            [핵심 주제]
-            ${topic}
-
-            ${detailedTopic ? `[상세 요청 - 주제와 동일한 핵심 조건]
-            ${detailedTopic}
-
-            상세 요청은 부가 설명이 아닙니다.
-            반드시 모든 문항에 일관되게 반영해야 하며, 주제와 동일한 중요도로 다뤄야 합니다.
-            ` : ''}
-
-            [기본 정보]
-            대상 학년: ${grade}
-            문항 수: ${requestedCount}
-            게임 유형: ${gameName}
-
-            ${getTopicSpecificGuidance(topic, detailedTopic).length > 0 ? `[주제 해석 고정]
-            ${getTopicSpecificGuidance(topic, detailedTopic).map(item => `- ${item}`).join("\n")}
-            ` : ''}
-
-            ${getTopicReferenceFacts(topic, detailedTopic).length > 0 ? `[二쇱젣 ?⑥떖 ?ъ떎]
-            ${getTopicReferenceFacts(topic, detailedTopic).map(item => `- ${item}`).join("\n")}
-            ` : ''}
-
-            ${pdfInstruction}
-
-            [절대 규칙]
-            1. 모든 문항은 핵심 주제에 정확히 맞아야 합니다.
-            2. 상세 요청이 있으면 모든 문항이 그 조건을 함께 만족해야 합니다.
-            3. 상세 요청을 한 문항이라도 어기면 전체 결과는 실패입니다.
-            4. PDF 참고자료가 있으면 자료 범위를 벗어나지 말고, 자료와 충돌하는 추측을 하지 마세요.
-            5. 정답은 명확하고 사실에 근거해야 합니다.
-            6. 학년에 맞는 난이도와 표현을 사용하세요.
-            7. 주제가 한국어이고 해석이 여러 개인 경우, 한국 초등학교/중학교 수업 문맥에서 가장 자연스러운 의미를 우선하세요.
-            8. 코드 블록이나 설명 없이 JSON 배열만 출력하세요.
-            9. 출력의 첫 글자는 '[' 이고 마지막 글자는 ']' 이어야 합니다.
-
-            [출력 전 자체 점검]
-            - 모든 문항이 주제를 벗어나지 않았는가?
-            - 모든 문항이 상세 요청을 빠짐없이 만족하는가?
-            - 애매한 해석 대신 학년과 한국 학교 수업 맥락에 맞는가?
-            - 문항 수가 정확히 ${requestedCount}개인가?
-
-            [JSON 형식]
-            [
-                { "question": "질문 내용", "answer": "정답", "wrongAnswer": "오답" }
-            ]
-        `;
-
-const normalizeQuestions = (questions, requestedCount) => (
-    questions.slice(0, requestedCount).map(q => ({
-        ...q,
-        question: q.question || "질문 없음",
-        answer: q.answer || "정답 없음",
-        wrongAnswer: q.wrongAnswer || "오답 없음"
-    }))
-);
 
 const validateDetailedRequestCompliance = async ({
     client,
@@ -724,50 +493,10 @@ app.post('/api/generate-quiz', async (req, res) => {
 
         const activeClient = createMoonshotClient(activeApiKey);
 
-        let pdfInstruction = "";
-
-        // Kimi 텍스트 기반 컨텍스트 (프론트엔드에서 텍스트로 추출된 내용)
-        if (pdfContext) {
-            pdfInstruction = `
-            [주요 참고 자료 - PDF 내용]
-            아래는 선생님이 업로드한 문서의 텍스트입니다. 
-            가급적 이 문서의 내용을 기반으로 질문과 정답을 구성해 주세요. 
-            문서 내용:
-            ${pdfContext.substring(0, 30000)} /* Kimi는 긴 컨텍스트를 잘 지원합니다 */
-            `;
-        }
-
         const requestedCount = Number(count) || 10;
-        pdfInstruction = buildPdfInstruction(pdfContext);
+        const pdfInstruction = buildPdfInstruction(pdfContext);
 
-        const promptText = `
-            [핵심 주제]
-            ${topic}
-
-            ${detailedTopic?.trim() ? `[상세 요청 - 주제와 동일한 핵심 조건]
-            ${detailedTopic}
-            상세 요청은 반드시 모든 문항에 반영해야 하며 주제와 동일한 중요도로 다뤄야 합니다.
-            ` : ''}
-            주제: ${topic}
-            대상 학년: ${grade}
-            문항 수: ${requestedCount}
-            게임 유형: ${gameName}
-            
-            당신은 초등/중등 교사를 돕는 전문 퀴즈 출제 위원입니다. 
-            위 주제에 대해 한국어로 작성해 주세요.
-            ${pdfInstruction}
-            
-            [공통 규칙]
-            1. 질문은 명확하고 이해하기 쉬워야 합니다.
-            2. 정답은 확실한 사실에 기반해야 합니다.
-            3. 아래의 JSON 형식을 엄격히 지켜서 출력하세요. 코드 블록(\`\`\`json) 등 부가적인 설명 없이 오직 JSON 배열만 출력하세요.
-            4. 출력의 첫 글자는 '[' 이고 마지막 글자는 ']' 이어야 합니다.
-            
-            [JSON 형식]
-            [
-                { "question": "질문 내용", "answer": "정답", "wrongAnswer": "오답" }
-            ]
-        `;
+        const promptText = buildQuizPrompt({ topic, detailedTopic, requestedCount, grade, gameName, pdfInstruction });
 
         let questions;
         let lastParseError;
@@ -825,12 +554,7 @@ app.post('/api/generate-quiz', async (req, res) => {
         }
 
         // Normalize
-        let normalized = questions.slice(0, requestedCount).map(q => ({
-            ...q,
-            question: q.question || "질문 없음",
-            answer: q.answer || "정답 없음",
-            wrongAnswer: q.wrongAnswer || "정답 아님"
-        }));
+        let normalized = normalizeQuestions(questions, requestedCount);
 
         if (remainingMs() > 15000) {
             normalized = await validateDetailedRequestCompliance({
