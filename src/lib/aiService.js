@@ -1,7 +1,24 @@
 /**
  * AI Service to generate educational quiz questions based on a topic and count.
- * Now calls Netlify Function to protect API key.
+ * Uses the local dev server in development and Netlify Functions in production.
  */
+const getQuizEndpoints = (configuredEndpoint) => {
+    if (configuredEndpoint) {
+        return [configuredEndpoint];
+    }
+
+    if (import.meta.env.DEV) {
+        return [
+            '/api/generate-quiz',
+            'http://localhost:3000/api/generate-quiz',
+            'http://127.0.0.1:3000/api/generate-quiz',
+            '/.netlify/functions/api'
+        ];
+    }
+
+    return ['/.netlify/functions/api'];
+};
+
 export const generateQuizQuestions = async (
     apiKey,
     topic,
@@ -14,16 +31,8 @@ export const generateQuizQuestions = async (
 ) => {
     try {
         const configuredEndpoint = import.meta.env.VITE_QUIZ_API_ENDPOINT?.trim();
-        const endpoints = configuredEndpoint
-            ? [configuredEndpoint]
-            : import.meta.env.DEV
-                ? [
-                    'http://localhost:3000/api/generate-quiz',
-                    'http://127.0.0.1:3000/api/generate-quiz',
-                    '/.netlify/functions/api'
-                ]
-                : ['/.netlify/functions/api'];
-
+        const endpoints = getQuizEndpoints(configuredEndpoint);
+        const devFallbackStatuses = new Set([404, 502, 503, 504]);
         const payload = JSON.stringify({ apiKey, topic, detailedTopic, count, grade, gameName, pdfContext, pdfData });
         let lastError;
 
@@ -37,13 +46,20 @@ export const generateQuizQuestions = async (
 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    let errorMessage = `서버 오류 (${response.status})`;
+                    let errorMessage = `Server error (${response.status})`;
+
                     try {
                         const errorBody = JSON.parse(errorText);
                         errorMessage = errorBody.error || errorBody.errorMessage || errorBody.message || errorMessage;
                     } catch {
                         errorMessage = `${response.status} ${response.statusText}: ${errorText.slice(0, 200)}`;
                     }
+
+                    if (!configuredEndpoint && import.meta.env.DEV && devFallbackStatuses.has(response.status)) {
+                        lastError = new Error(errorMessage);
+                        continue;
+                    }
+
                     throw new Error(errorMessage);
                 }
 
@@ -57,11 +73,10 @@ export const generateQuizQuestions = async (
                 }
             }
         }
-        throw lastError || new Error('퀴즈 생성 서버에 연결할 수 없습니다.');
 
+        throw lastError || new Error('Quiz generation server is not reachable.');
     } catch (error) {
         console.error("[AIService] Generation Error:", error);
-        throw new Error(`퀴즈 생성 중 오류가 발생했습니다: ${error.message}`);
+        throw new Error(`Quiz generation failed: ${error.message}`);
     }
 };
-

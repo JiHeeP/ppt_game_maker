@@ -22,7 +22,7 @@ export const getBingoTemplate = (topic, questions) => {
 
                 <div style="flex-grow: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;">
                     <div style="display: grid; grid-template-columns: repeat(${m}, 1fr); width: 100%; border: 3px solid #000; background: #000; aspect-ratio: 1/1; box-shadow: 10px 10px 0px rgba(0,0,0,0.1);">
-                        ${Array.from({ length: gridSize }).map((_, i) => `
+                        ${Array.from({ length: gridSize }).map(() => `
                             <div style="border: 1px solid #000; display: flex; align-items: center; justify-content: center; background: white;">
                             </div>
                         `).join('')}
@@ -84,7 +84,7 @@ export const getBingoVerticalTemplate = (topic, questions) => {
                 <!-- Bingo Grid Section (Middle) -->
                 <div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 40px;">
                     <div style="display: grid; grid-template-columns: repeat(${m}, 1fr); width: 680px; border: 5px solid #000; background: #000; aspect-ratio: 1/1; box-shadow: 15px 15px 0px rgba(0,0,0,0.05);">
-                        ${Array.from({ length: gridSize }).map((_, i) => `
+                        ${Array.from({ length: gridSize }).map(() => `
                             <div style="border: 1px solid #000; display: flex; align-items: center; justify-content: center; background: white;">
                             </div>
                         `).join('')}
@@ -288,9 +288,7 @@ export const getLandGrabTemplate = (topic, questions) => {
         </div>
     `;
 };
-export const getPungiyoTemplate = (topic, questions, grade) => {
-    // 10 questions fixed
-    const finalQuestions = questions.slice(0, 10);
+export const getPungiyoTemplate = (topic, _questions, grade) => {
     const isHighGrade = !grade.includes('1학년') && !grade.includes('2학년');
 
     // Generate scores based on grade

@@ -11,18 +11,78 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// Use KIMI_API_KEY from environment, with fallbacks if needed
-const serverApiKey = process.env.VITE_KIMI_API_KEY || process.env.KIMI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+const getServerApiKey = () => (
+    process.env.VITE_KIMI_API_KEY
+    || process.env.KIMI_API_KEY
+    || process.env.VITE_GEMINI_API_KEY
+    || process.env.GEMINI_API_KEY
+    || ''
+).trim();
 
-if (!serverApiKey) {
+if (!getServerApiKey()) {
     console.error("Warning: KIMI_API_KEY is not set in .env file");
 }
 
-const openai = new OpenAI({
-    apiKey: serverApiKey,
+const createMoonshotClient = (apiKey) => new OpenAI({
+    apiKey,
     baseURL: "https://api.moonshot.ai/v1",
     timeout: 25000,
 });
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const isRetriableOpenAIError = (error) => {
+    const status = error?.status;
+    const message = `${error?.message || error?.error?.message || ''}`.toLowerCase();
+    return [429, 500, 502, 503, 504].includes(status)
+        || message.includes('overloaded')
+        || message.includes('rate limit')
+        || message.includes('temporarily unavailable');
+};
+
+const toUserFacingError = (error) => {
+    if (isRetriableOpenAIError(error)) {
+        const wrapped = new Error("AI 서버가 일시적으로 바쁩니다. 잠시 후 다시 시도해주세요.");
+        wrapped.status = 503;
+        return wrapped;
+    }
+
+    const wrapped = new Error(error?.message || "Unknown server error");
+    wrapped.status = error?.status || 500;
+    return wrapped;
+};
+
+const createChatCompletionWithRetry = async ({
+    client,
+    request,
+    remainingMs = () => 60000,
+    operationLabel = "AI request",
+    maxAttempts = 2
+}) => {
+    let lastError;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        if (attempt > 0) {
+            const backoffMs = 1200 * attempt;
+            if (remainingMs() < backoffMs + 4000) {
+                break;
+            }
+            console.warn(`${operationLabel} retry ${attempt + 1}/${maxAttempts} in ${backoffMs}ms`);
+            await sleep(backoffMs);
+        }
+
+        try {
+            return await client.chat.completions.create(request);
+        } catch (error) {
+            lastError = error;
+            if (!isRetriableOpenAIError(error) || attempt === maxAttempts - 1) {
+                break;
+            }
+        }
+    }
+
+    throw toUserFacingError(lastError);
+};
 
 const extractObjectsFromTruncatedArray = (sourceText) => {
     const arrayStart = sourceText.indexOf('[');
@@ -416,14 +476,19 @@ const validateDetailedRequestCompliance = async ({
             return questions;
         }
         console.log(`Calling validation API (${remainingMs()}ms remaining)`);
-        const completion = await client.chat.completions.create({
-            model: "moonshot-v1-32k",
-            messages: [
-                { role: "system", content: "당신은 요구사항 위반을 엄격하게 잡아내는 수업용 퀴즈 검수 AI입니다. 한 문항이라도 조건을 어기면 전체 세트를 불합격 처리합니다." },
-                { role: "user", content: validationPrompt }
-            ],
-            temperature: 0,
-            max_tokens: 4096,
+        const completion = await createChatCompletionWithRetry({
+            client,
+            remainingMs,
+            operationLabel: "Validation API",
+            request: {
+                model: "moonshot-v1-32k",
+                messages: [
+                    { role: "system", content: "당신은 요구사항 위반을 엄격하게 잡아내는 수업용 퀴즈 검수 AI입니다. 한 문항이라도 조건을 어기면 전체 세트를 불합격 처리합니다." },
+                    { role: "user", content: validationPrompt }
+                ],
+                temperature: 0,
+                max_tokens: 4096,
+            }
         });
 
         const text = completion.choices[0].message.content || "";
@@ -449,7 +514,7 @@ const validateDetailedRequestCompliance = async ({
     return questions;
 };
 
-const auditDetailedRequestCompliance = async ({
+const _auditDetailedRequestCompliance = async ({
     client,
     topic,
     detailedTopic,
@@ -500,14 +565,18 @@ const auditDetailedRequestCompliance = async ({
         }
     `;
 
-    const completion = await client.chat.completions.create({
-        model: "moonshot-v1-32k",
-        messages: [
-            { role: "system", content: "당신은 요구사항 위반을 엄격하게 판정하는 퀴즈 감사 AI입니다." },
-            { role: "user", content: auditPrompt }
-        ],
-        temperature: 0,
-        max_tokens: 1500,
+    const completion = await createChatCompletionWithRetry({
+        client,
+        operationLabel: "Audit API",
+        request: {
+            model: "moonshot-v1-32k",
+            messages: [
+                { role: "system", content: "당신은 요구사항 위반을 엄격하게 판정하는 퀴즈 감사 AI입니다." },
+                { role: "user", content: auditPrompt }
+            ],
+            temperature: 0,
+            max_tokens: 1500,
+        }
     });
 
     const text = completion.choices[0].message.content || "";
@@ -554,14 +623,18 @@ const regenerateQuestionsFromIssues = async ({
         - 애매한 해석이 가능하면 한국 학교 수업 맥락의 의미를 우선하세요.
     `;
 
-    const completion = await client.chat.completions.create({
-        model: "moonshot-v1-32k",
-        messages: [
-            { role: "system", content: "당신은 요구사항 위반을 수정하기 위해 전체 문제 세트를 새로 생성하는 AI입니다." },
-            { role: "user", content: regenerationPrompt }
-        ],
-        temperature: 0,
-        max_tokens: 4096,
+    const completion = await createChatCompletionWithRetry({
+        client,
+        operationLabel: "Regeneration API",
+        request: {
+            model: "moonshot-v1-32k",
+            messages: [
+                { role: "system", content: "당신은 요구사항 위반을 수정하기 위해 전체 문제 세트를 새로 생성하는 AI입니다." },
+                { role: "user", content: regenerationPrompt }
+            ],
+            temperature: 0,
+            max_tokens: 4096,
+        }
     });
 
     const text = completion.choices[0].message.content || "";
@@ -576,17 +649,16 @@ app.post('/api/generate-quiz', async (req, res) => {
         const TIME_LIMIT_MS = 55000;
         const remainingMs = () => Math.max(0, TIME_LIMIT_MS - (Date.now() - FUNCTION_START));
 
-        const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData, apiKey: clientApiKey } = req.body;
+        const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData: _pdfData, apiKey: clientApiKey } = req.body;
+        const activeApiKey = (clientApiKey || getServerApiKey()).trim();
 
-        // Use client API key if provided, otherwise fallback to server env
-        let activeClient = openai;
-        if (clientApiKey) {
-            activeClient = new OpenAI({
-                apiKey: clientApiKey,
-                baseURL: "https://api.moonshot.ai/v1",
-                timeout: 25000,
+        if (!activeApiKey) {
+            return res.status(500).json({
+                error: "KIMI_API_KEY is not configured. Add a server key or enter a personal API key in settings."
             });
         }
+
+        const activeClient = createMoonshotClient(activeApiKey);
 
         let pdfInstruction = "";
 
@@ -642,21 +714,26 @@ app.post('/api/generate-quiz', async (req, res) => {
                 break;
             }
             console.log(`Calling Kimi API (Moonshot)... attempt ${attempt + 1} (${remainingMs()}ms remaining)`);
-            const completion = await activeClient.chat.completions.create({
-                model: "moonshot-v1-32k",
-                messages: [
-                    { role: "system", content: "당신은 교육용 퀴즈를 생성하는 AI 어시스턴트입니다." },
-                    { role: "user", content: promptText },
-                    { role: "user", content: "상세 요청은 주제와 같은 급의 핵심 조건입니다. 한 문항이라도 상세 요청을 어기면 전체 응답은 실패입니다. 모든 문항이 주제, 상세 요청, 학년, 자료 범위를 동시에 만족하는지 스스로 점검한 뒤 출력하세요." },
-                    ...(attempt > 0
-                        ? [{
-                            role: "user",
-                            content: `이전 응답이 JSON 형식 오류 또는 잘림 상태였습니다. 반드시 ${requestedCount}개 문항의 JSON 배열만 다시 출력하세요.`
-                        }]
-                        : [])
-                ],
-                temperature: 0.1,
-                max_tokens: 4096,
+            const completion = await createChatCompletionWithRetry({
+                client: activeClient,
+                remainingMs,
+                operationLabel: "Quiz generation API",
+                request: {
+                    model: "moonshot-v1-32k",
+                    messages: [
+                        { role: "system", content: "당신은 교육용 퀴즈를 생성하는 AI 어시스턴트입니다." },
+                        { role: "user", content: promptText },
+                        { role: "user", content: "상세 요청은 주제와 같은 급의 핵심 조건입니다. 한 문항이라도 상세 요청을 어기면 전체 응답은 실패입니다. 모든 문항이 주제, 상세 요청, 학년, 자료 범위를 동시에 만족하는지 스스로 점검한 뒤 출력하세요." },
+                        ...(attempt > 0
+                            ? [{
+                                role: "user",
+                                content: `이전 응답이 JSON 형식 오류 또는 잘림 상태였습니다. 반드시 ${requestedCount}개 문항의 JSON 배열만 다시 출력하세요.`
+                            }]
+                            : [])
+                    ],
+                    temperature: 0.1,
+                    max_tokens: 4096,
+                }
             });
 
             const text = completion.choices[0].message.content || "";
@@ -711,7 +788,7 @@ app.post('/api/generate-quiz', async (req, res) => {
 
     } catch (error) {
         console.error("Generation Error:", error);
-        res.status(500).json({ error: error.message });
+        res.status(error?.status || 500).json({ error: error.message });
     }
 });
 

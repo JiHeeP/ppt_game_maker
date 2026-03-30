@@ -1,5 +1,74 @@
 import OpenAI from 'openai';
 
+const getServerApiKey = () => (
+    process.env.VITE_KIMI_API_KEY
+    || process.env.KIMI_API_KEY
+    || process.env.VITE_GEMINI_API_KEY
+    || process.env.GEMINI_API_KEY
+    || ''
+).trim();
+
+const createMoonshotClient = (apiKey) => new OpenAI({
+    apiKey,
+    baseURL: "https://api.moonshot.ai/v1",
+    timeout: 28000,
+});
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const isRetriableOpenAIError = (error) => {
+    const status = error?.status;
+    const message = `${error?.message || error?.error?.message || ''}`.toLowerCase();
+    return [429, 500, 502, 503, 504].includes(status)
+        || message.includes('overloaded')
+        || message.includes('rate limit')
+        || message.includes('temporarily unavailable');
+};
+
+const toUserFacingError = (error) => {
+    if (isRetriableOpenAIError(error)) {
+        const wrapped = new Error("AI 서버가 일시적으로 바쁩니다. 잠시 후 다시 시도해주세요.");
+        wrapped.status = 503;
+        return wrapped;
+    }
+
+    const wrapped = new Error(error?.message || 'Unknown server error');
+    wrapped.status = error?.status || 500;
+    return wrapped;
+};
+
+const createChatCompletionWithRetry = async ({
+    client,
+    request,
+    remainingMs = () => 30000,
+    operationLabel = 'AI request',
+    maxAttempts = 2
+}) => {
+    let lastError;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        if (attempt > 0) {
+            const backoffMs = 1200 * attempt;
+            if (remainingMs() < backoffMs + 4000) {
+                break;
+            }
+            console.warn(`${operationLabel} retry ${attempt + 1}/${maxAttempts} in ${backoffMs}ms`);
+            await sleep(backoffMs);
+        }
+
+        try {
+            return await client.chat.completions.create(request);
+        } catch (error) {
+            lastError = error;
+            if (!isRetriableOpenAIError(error) || attempt === maxAttempts - 1) {
+                break;
+            }
+        }
+    }
+
+    throw toUserFacingError(lastError);
+};
+
 const extractObjectsFromTruncatedArray = (sourceText) => {
     const arrayStart = sourceText.indexOf('[');
     if (arrayStart < 0) return [];
@@ -310,7 +379,7 @@ const normalizeQuestions = (questions, requestedCount) => (
     }))
 );
 
-const validateDetailedRequestCompliance = async ({
+const _validateDetailedRequestCompliance = async ({
     client,
     topic,
     detailedTopic,
@@ -392,14 +461,19 @@ const validateDetailedRequestCompliance = async ({
             return questions;
         }
         console.log(`Calling validation API (${remainingMs()}ms remaining)`);
-        const completion = await client.chat.completions.create({
-            model: "moonshot-v1-32k",
-            messages: [
-                { role: "system", content: "당신은 요구사항 위반을 엄격하게 잡아내는 수업용 퀴즈 검수 AI입니다. 한 문항이라도 조건을 어기면 전체 세트를 불합격 처리합니다." },
-                { role: "user", content: validationPrompt }
-            ],
-            temperature: 0,
-            max_tokens: 4096,
+        const completion = await createChatCompletionWithRetry({
+            client,
+            remainingMs,
+            operationLabel: "Validation API",
+            request: {
+                model: "moonshot-v1-32k",
+                messages: [
+                    { role: "system", content: "당신은 요구사항 위반을 엄격하게 잡아내는 수업용 퀴즈 검수 AI입니다. 한 문항이라도 조건을 어기면 전체 세트를 불합격 처리합니다." },
+                    { role: "user", content: validationPrompt }
+                ],
+                temperature: 0,
+                max_tokens: 4096,
+            }
         });
 
         const text = completion.choices[0].message.content || "";
@@ -425,7 +499,7 @@ const validateDetailedRequestCompliance = async ({
     return questions;
 };
 
-const auditDetailedRequestCompliance = async ({
+const _auditDetailedRequestCompliance = async ({
     client,
     topic,
     detailedTopic,
@@ -476,14 +550,18 @@ const auditDetailedRequestCompliance = async ({
         }
     `;
 
-    const completion = await client.chat.completions.create({
-        model: "moonshot-v1-32k",
-        messages: [
-            { role: "system", content: "당신은 요구사항 위반을 엄격하게 판정하는 퀴즈 감사 AI입니다." },
-            { role: "user", content: auditPrompt }
-        ],
-        temperature: 0,
-        max_tokens: 1500,
+    const completion = await createChatCompletionWithRetry({
+        client,
+        operationLabel: "Audit API",
+        request: {
+            model: "moonshot-v1-32k",
+            messages: [
+                { role: "system", content: "당신은 요구사항 위반을 엄격하게 판정하는 퀴즈 감사 AI입니다." },
+                { role: "user", content: auditPrompt }
+            ],
+            temperature: 0,
+            max_tokens: 1500,
+        }
     });
 
     const text = completion.choices[0].message.content || "";
@@ -531,14 +609,18 @@ const regenerateQuestionsFromIssues = async ({
         - ??? ?????? ??? ??? JSON ?????????????
     `;
 
-    const completion = await client.chat.completions.create({
-        model: "moonshot-v1-32k",
-        messages: [
-            { role: "system", content: "????? ?????? ??????????? ??? ??? ??? ???????? ?????? AI?????" },
-            { role: "user", content: strictRegenerationPrompt }
-        ],
-        temperature: 0,
-        max_tokens: 4096,
+    const completion = await createChatCompletionWithRetry({
+        client,
+        operationLabel: "Regeneration API",
+        request: {
+            model: "moonshot-v1-32k",
+            messages: [
+                { role: "system", content: "????? ?????? ??????????? ??? ??? ??? ???????? ?????? AI?????" },
+                { role: "user", content: strictRegenerationPrompt }
+            ],
+            temperature: 0,
+            max_tokens: 4096,
+        }
     });
 
     const text = completion.choices[0].message.content || "";
@@ -546,7 +628,7 @@ const regenerateQuestionsFromIssues = async ({
     return normalizeQuestions(parsed, requestedCount);
 };
 
-export const handler = async (event, context) => {
+export const handler = async (event, _context) => {
     // CORS headers
     const headers = {
         'Access-Control-Allow-Origin': '*',
@@ -564,8 +646,12 @@ export const handler = async (event, context) => {
     }
 
     try {
-        const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData, apiKey: clientApiKey } = JSON.parse(event.body);
-        const apiKey = clientApiKey || process.env.KIMI_API_KEY || process.env.GEMINI_API_KEY;
+        const FUNCTION_START = Date.now();
+        const TIME_LIMIT_MS = 28000;
+        const remainingMs = () => Math.max(0, TIME_LIMIT_MS - (Date.now() - FUNCTION_START));
+
+        const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData: _pdfData, apiKey: clientApiKey } = JSON.parse(event.body);
+        const apiKey = (clientApiKey || getServerApiKey()).trim();
 
         if (!apiKey) {
             return {
@@ -575,11 +661,7 @@ export const handler = async (event, context) => {
             };
         }
 
-        const openai = new OpenAI({
-            apiKey: apiKey,
-            baseURL: "https://api.moonshot.ai/v1",
-            timeout: 28000,
-        });
+        const openai = createMoonshotClient(apiKey);
 
         const requestedCount = Number(count) || 10;
         const pdfInstruction = buildPdfInstruction(pdfContext);
@@ -606,8 +688,12 @@ export const handler = async (event, context) => {
         });
 
         // 단일 API 호출 - 30초 제한 내에서 1번만 호출
-        console.log("Calling Kimi API (single attempt, 30s Netlify limit)");
-        const completion = await openai.chat.completions.create({
+        console.log(`Calling Kimi API (Netlify) with retry guard (${remainingMs()}ms remaining)`);
+        const completion = await createChatCompletionWithRetry({
+            client: openai,
+            remainingMs,
+            operationLabel: "Netlify quiz generation API",
+            request: {
             model: "moonshot-v1-32k",
             messages: [
                 { role: "system", content: "당신은 교육용 퀴즈를 생성하는 AI 어시스턴트입니다. 반드시 JSON 배열만 출력하세요." },
@@ -615,6 +701,7 @@ export const handler = async (event, context) => {
             ],
             temperature: 0.1,
             max_tokens: 4096,
+            }
         });
 
         const text = completion.choices[0].message.content || "";
