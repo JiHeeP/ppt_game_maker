@@ -372,7 +372,7 @@ export const getTopTenMatchTemplate = (topic, pairs) => {
                     ${grid.map(row => `
                         <tr style="height: 25%;">
                             ${row.map(cell => `
-                                <td style="border: 2.5px solid #000; padding: 15px; text-align: center; vertical-align: middle; word-break: break-all; font-size: 24px; font-weight: 900; background: white; line-height: 1.3;">
+                                <td style="border: 2.5px solid #000; padding: 15px; text-align: center; vertical-align: middle; word-break: break-all; font-size: 24px; font-weight: 900; background: white; line-height: 1.3; width: 25%;">
                                     <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%;">
                                         ${cell || ''}
                                     </div>
