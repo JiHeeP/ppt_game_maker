@@ -483,7 +483,7 @@ export const handler = async (event, _context) => {
         const TIME_LIMIT_MS = 28000;
         const remainingMs = () => Math.max(0, TIME_LIMIT_MS - (Date.now() - FUNCTION_START));
 
-        const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData: _pdfData, apiKey: clientApiKey } = JSON.parse(event.body);
+        const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData: _pdfData, apiKey: clientApiKey, subject = "", batchHint = "" } = JSON.parse(event.body);
         const apiKey = (clientApiKey || getServerApiKey()).trim();
 
         if (!apiKey) {
@@ -517,7 +517,9 @@ export const handler = async (event, _context) => {
             requestedCount,
             grade,
             gameName,
-            pdfInstruction
+            pdfInstruction,
+            subject,
+            batchHint
         });
 
         // 단일 API 호출 - 30초 제한 내에서 1번만 호출

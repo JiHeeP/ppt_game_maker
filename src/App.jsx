@@ -44,9 +44,14 @@ const GRADES = [
   '초등 1-2', '초등 3-4', '초등 5-6', '중학교', '고등학교', '기타'
 ];
 
+const SUBJECTS = [
+  '국어', '수학', '사회', '과학', '영어', '미술', '체육', '음악', '도덕', '실과'
+];
+
 const App = () => {
   const [topic, setTopic] = useState('')
   const [detailedTopic, setDetailedTopic] = useState('')
+  const [subject, setSubject] = useState('')
   const [grade, setGrade] = useState('초등 3-4')
   const [count, setCount] = useState(10)
   const [studentCount, setStudentCount] = useState(Number(localStorage.getItem('student_count')) || 24)
@@ -135,7 +140,7 @@ const App = () => {
 
       // We pass the apiKey (might be empty) - the backend will use its own if ours is empty.
       const topicForModel = detailedTopic ? `${topic} [필수 조건: ${detailedTopic}]` : topic
-      const questions = await generateQuizQuestions(apiKey, topicForModel, detailedTopic, finalCount, grade, selectedGame.name, pdfText, pdfData)
+      const questions = await generateQuizQuestions(apiKey, topicForModel, detailedTopic, finalCount, grade, selectedGame.name, pdfText, pdfData, subject)
 
       setLoadingStatus(`${selectedGame.name} 파일을 생성하고 있습니다...`)
 
@@ -143,6 +148,7 @@ const App = () => {
       saveToLibrary({
         id: Date.now(),
         topic,
+        subject,
         questions,
         gameName: selectedGame.name,
         gameId: selectedGame.id,
@@ -295,6 +301,13 @@ const App = () => {
           <>
             {/* Top Bento Grid Section */}
             <section className="bento-top-row">
+              <div className="bento-item">
+                <label>과목</label>
+                <select value={subject} onChange={(e) => setSubject(e.target.value)}>
+                  <option value="">선택 안함</option>
+                  {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
               <div className="bento-item">
                 <label>대상 학년</label>
                 <select value={grade} onChange={(e) => setGrade(e.target.value)}>

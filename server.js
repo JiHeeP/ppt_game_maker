@@ -482,7 +482,7 @@ app.post('/api/generate-quiz', async (req, res) => {
         const TIME_LIMIT_MS = 55000;
         const remainingMs = () => Math.max(0, TIME_LIMIT_MS - (Date.now() - FUNCTION_START));
 
-        const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData: _pdfData, apiKey: clientApiKey } = req.body;
+        const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData: _pdfData, apiKey: clientApiKey, subject = "", batchHint = "" } = req.body;
         const activeApiKey = (clientApiKey || getServerApiKey()).trim();
 
         if (!activeApiKey) {
@@ -496,7 +496,7 @@ app.post('/api/generate-quiz', async (req, res) => {
         const requestedCount = Number(count) || 10;
         const pdfInstruction = buildPdfInstruction(pdfContext);
 
-        const promptText = buildQuizPrompt({ topic, detailedTopic, requestedCount, grade, gameName, pdfInstruction });
+        const promptText = buildQuizPrompt({ topic, detailedTopic, requestedCount, grade, gameName, pdfInstruction, subject, batchHint });
 
         let questions;
         let lastParseError;
