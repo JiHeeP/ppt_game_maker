@@ -125,7 +125,48 @@ export const getHeuristicIssues = (topic = "", detailedTopic = "", questions = [
     return issues;
 };
 
-export const buildQuizPrompt = ({ topic, detailedTopic, requestedCount, grade, gameName, pdfInstruction }) => `
+const SUBJECT_GUIDANCE = {
+    '수학': [
+        "수학 과목입니다. 가능한 한 숫자를 활용하여 학생이 직접 계산해서 답을 구하는 문제를 출제하세요.",
+        "정답은 숫자, 수식, 또는 계산 결과 형태여야 합니다.",
+        "단순 개념 암기보다 직접 풀어보는 계산 문제를 우선하세요."
+    ],
+    '국어': [
+        "국어 과목입니다. 어휘, 문법, 독해, 문학 등 국어 교과 맥락에 맞는 문제를 출제하세요."
+    ],
+    '사회': [
+        "사회 과목입니다. 역사, 지리, 일반사회 등 사회과 교육과정에 맞는 문제를 출제하세요."
+    ],
+    '과학': [
+        "과학 과목입니다. 과학적 사실과 원리에 기반한 문제를 출제하세요."
+    ],
+    '영어': [
+        "영어 과목입니다. 영어 어휘, 문법, 독해 관련 문제를 출제하세요.",
+        "질문은 한국어로, 정답은 영어로 작성해도 됩니다."
+    ],
+    '미술': [
+        "미술 과목입니다. 미술 작품, 기법, 미술사, 색채 등 미술 교과에 맞는 문제를 출제하세요."
+    ],
+    '체육': [
+        "체육 과목입니다. 스포츠 규칙, 건강, 운동 원리 관련 문제를 출제하세요."
+    ],
+    '음악': [
+        "음악 과목입니다. 음악 이론, 악기, 음악사, 리듬 관련 문제를 출제하세요."
+    ],
+    '도덕': [
+        "도덕 과목입니다. 윤리, 도덕적 판단, 시민의식 관련 문제를 출제하세요."
+    ],
+    '실과': [
+        "실과(기술·가정) 과목입니다. 기술, 가정생활, 정보 관련 문제를 출제하세요."
+    ]
+};
+
+const getSubjectGuidance = (subject = "") => {
+    if (!subject) return [];
+    return SUBJECT_GUIDANCE[subject] || [];
+};
+
+export const buildQuizPrompt = ({ topic, detailedTopic, requestedCount, grade, gameName, pdfInstruction, subject, batchHint }) => `
             [핵심 주제]
             ${topic}
 
@@ -137,9 +178,19 @@ export const buildQuizPrompt = ({ topic, detailedTopic, requestedCount, grade, g
             ` : ''}
 
             [기본 정보]
+            ${subject ? `과목: ${subject}` : ''}
             대상 학년: ${grade}
             문항 수: ${requestedCount}
             게임 유형: ${gameName}
+
+            ${getSubjectGuidance(subject).length > 0 ? `[과목별 출제 지침]
+            ${getSubjectGuidance(subject).map(item => `- ${item}`).join("\n")}
+            ` : ''}
+
+            ${batchHint ? `[배치 정보]
+            ${batchHint}
+            - 다른 배치에서 이미 생성된 문제와 중복되지 않도록 다양한 문제를 출제하세요.
+            ` : ''}
 
             ${getTopicSpecificGuidance(topic, detailedTopic).length > 0 ? `[주제 해석 고정]
             ${getTopicSpecificGuidance(topic, detailedTopic).map(item => `- ${item}`).join("\n")}

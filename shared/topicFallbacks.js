@@ -10,6 +10,18 @@ export const isGcdPracticeRequest = (topic = "", detailedTopic = "") => {
         );
 };
 
+export const isLcmPracticeRequest = (topic = "", detailedTopic = "") => {
+    const merged = `${topic} ${detailedTopic}`.toLowerCase();
+    return merged.includes("최소공배수")
+        && (
+            merged.includes("두 수")
+            || merged.includes("두수")
+            || merged.includes("찾기")
+            || merged.includes("구하기")
+            || merged.includes("계산")
+        );
+};
+
 const parseGcdConstraints = (topic = "", detailedTopic = "") => {
     const merged = `${topic} ${detailedTopic}`;
     let minGcd = 2;
@@ -25,6 +37,67 @@ const parseGcdConstraints = (topic = "", detailedTopic = "") => {
     if (maxMatch) maxGcd = Math.min(maxGcd, Number(maxMatch[1]));
 
     return { minGcd, maxGcd };
+};
+
+const gcd = (a, b) => b === 0 ? a : gcd(b, a % b);
+const lcm = (a, b) => (a * b) / gcd(a, b);
+
+const parseLcmConstraints = (topic = "", detailedTopic = "") => {
+    const merged = `${topic} ${detailedTopic}`;
+    let minVal = 2;
+    let maxVal = 30;
+
+    const minMatch = merged.match(/(\d+)\s*이상/);
+    if (minMatch) minVal = Math.max(minVal, Number(minMatch[1]));
+
+    const maxMatch = merged.match(/(\d+)\s*이하/);
+    if (maxMatch) maxVal = Math.min(maxVal, Number(maxMatch[1]));
+
+    return { minVal, maxVal };
+};
+
+const createLcmPracticeQuestions = (requestedCount = 10, minVal = 2, maxVal = 30) => {
+    const numbers = [];
+    for (let i = minVal; i <= maxVal; i++) numbers.push(i);
+    if (numbers.length < 2) return [];
+
+    const usedPairs = new Set();
+    const allCandidates = [];
+
+    for (let i = 0; i < numbers.length; i++) {
+        for (let j = i + 1; j < numbers.length; j++) {
+            const a = numbers[i];
+            const b = numbers[j];
+            const result = lcm(a, b);
+            if (result > 200) continue;
+
+            const pairKey = `${a}-${b}`;
+            if (usedPairs.has(pairKey)) continue;
+            usedPairs.add(pairKey);
+
+            const wrongCandidates = [
+                a * b !== result ? a * b : null,
+                result + a,
+                result - 1 > 0 ? result - 1 : null,
+                result + 1,
+                gcd(a, b)
+            ].filter(c => c !== null && c !== result && c > 0);
+
+            allCandidates.push({
+                question: `${a}와(과) ${b}의 최소공배수는?`,
+                answer: String(result),
+                wrongAnswer: String(wrongCandidates[0] || result + 1)
+            });
+        }
+    }
+
+    // Shuffle to get varied difficulty
+    for (let i = allCandidates.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [allCandidates[i], allCandidates[j]] = [allCandidates[j], allCandidates[i]];
+    }
+
+    return allCandidates.slice(0, requestedCount);
 };
 
 const MATH_TOPIC_MARKER = "수학";
@@ -120,6 +193,11 @@ export const getSpecialTopicFallbackQuestions = (topic = "", detailedTopic = "",
     if (isGcdPracticeRequest(topic, detailedTopic)) {
         const { minGcd, maxGcd } = parseGcdConstraints(topic, detailedTopic);
         return createGcdPracticeQuestions(requestedCount, minGcd, maxGcd);
+    }
+
+    if (isLcmPracticeRequest(topic, detailedTopic)) {
+        const { minVal, maxVal } = parseLcmConstraints(topic, detailedTopic);
+        return createLcmPracticeQuestions(requestedCount, minVal, maxVal);
     }
 
     return null;
