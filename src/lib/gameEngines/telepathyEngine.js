@@ -22,7 +22,6 @@ export const generateTelepathyPPT = async (topic, questions) => {
     for (let i = 0; i < questions.length - 1; i += 2) {
         const qA = questions[i];
         const qB = questions[i + 1];
-        const roundNum = (i / 2) + 1;
         const teacherPicksA = Math.random() < 0.5;
         const winnerSide = teacherPicksA ? "A" : "B";
         const winnerColor = teacherPicksA ? THEME.action : THEME.accent;

@@ -22,7 +22,7 @@ export const getBingoTemplate = (topic, questions) => {
 
                 <div style="flex-grow: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;">
                     <div style="display: grid; grid-template-columns: repeat(${m}, 1fr); width: 100%; border: 3px solid #000; background: #000; aspect-ratio: 1/1; box-shadow: 10px 10px 0px rgba(0,0,0,0.1);">
-                        ${Array.from({ length: gridSize }).map((_, i) => `
+                        ${Array.from({ length: gridSize }).map(() => `
                             <div style="border: 1px solid #000; display: flex; align-items: center; justify-content: center; background: white;">
                             </div>
                         `).join('')}
@@ -84,7 +84,7 @@ export const getBingoVerticalTemplate = (topic, questions) => {
                 <!-- Bingo Grid Section (Middle) -->
                 <div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 40px;">
                     <div style="display: grid; grid-template-columns: repeat(${m}, 1fr); width: 680px; border: 5px solid #000; background: #000; aspect-ratio: 1/1; box-shadow: 15px 15px 0px rgba(0,0,0,0.05);">
-                        ${Array.from({ length: gridSize }).map((_, i) => `
+                        ${Array.from({ length: gridSize }).map(() => `
                             <div style="border: 1px solid #000; display: flex; align-items: center; justify-content: center; background: white;">
                             </div>
                         `).join('')}
@@ -288,9 +288,7 @@ export const getLandGrabTemplate = (topic, questions) => {
         </div>
     `;
 };
-export const getPungiyoTemplate = (topic, questions, grade) => {
-    // 10 questions fixed
-    const finalQuestions = questions.slice(0, 10);
+export const getPungiyoTemplate = (topic, _questions, grade) => {
     const isHighGrade = !grade.includes('1학년') && !grade.includes('2학년');
 
     // Generate scores based on grade
@@ -354,11 +352,17 @@ export const getTopTenMatchTemplate = (topic, pairs) => {
     // Row 1 & Row 2 are pairs (4 columns)
     // Row 3 & Row 4 are pairs (4 columns)
 
+    const pad = (arr) => {
+        const padded = arr.slice(0, 4);
+        while (padded.length < 4) padded.push('');
+        return padded;
+    };
+
     const grid = [
-        pairs.slice(0, 4).map(p => p.question), // Row 1 (Problems)
-        pairs.slice(0, 4).map(p => p.answer),   // Row 2 (Answers for Row 1)
-        pairs.slice(4, 8).map(p => p.question), // Row 3 (Problems)
-        pairs.slice(4, 8).map(p => p.answer)    // Row 4 (Answers for Row 3)
+        pad(pairs.slice(0, 4).map(p => p.question)),
+        pad(pairs.slice(0, 4).map(p => p.answer)),
+        pad(pairs.slice(4, 8).map(p => p.question)),
+        pad(pairs.slice(4, 8).map(p => p.answer))
     ];
 
     return `
@@ -368,7 +372,7 @@ export const getTopTenMatchTemplate = (topic, pairs) => {
                     ${grid.map(row => `
                         <tr style="height: 25%;">
                             ${row.map(cell => `
-                                <td style="border: 2.5px solid #000; padding: 15px; text-align: center; vertical-align: middle; word-break: break-all; font-size: 24px; font-weight: 900; background: white; line-height: 1.3;">
+                                <td style="border: 2.5px solid #000; padding: 15px; text-align: center; vertical-align: middle; word-break: break-all; font-size: 24px; font-weight: 900; background: white; line-height: 1.3; width: 25%;">
                                     <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%;">
                                         ${cell || ''}
                                     </div>
