@@ -72,21 +72,38 @@ export const buildIronmanBoards = (questions) => {
     return boards;
 };
 
-export const generateIronmanHTML = async (topic, questions, grade = '', studentCount = 24) => {
-    const boards = buildIronmanBoards(questions);
+/**
+ * 게임 1판을 만든다.
+ * 사이트에서 바로 실행할 때와 파일로 내려받을 때 같은 결과를 쓰도록,
+ * 완성된 HTML과 판 구성을 함께 돌려준다.
+ *
+ * @param {object[]} [savedBoards] 보관함에 저장해 둔 판 구성.
+ *   넘기면 그 구성을 그대로 쓰므로 다시 열어도 생사가 바뀌지 않는다.
+ */
+export const buildIronmanGame = (topic, questions, grade = '', studentCount = 24, savedBoards = null) => {
+    const boards = (savedBoards && savedBoards.length > 0)
+        ? savedBoards
+        : buildIronmanBoards(questions);
 
     if (boards.length === 0) {
         throw new Error(`아이언맨 게임은 최소 ${IRONMAN_CELLS_PER_BOARD}개의 문제가 필요합니다.`);
     }
 
-    const html = renderIronmanDocument({ topic, grade, studentCount, boards });
+    return {
+        boards,
+        html: renderIronmanDocument({ topic, grade, studentCount, boards }),
+        fileName: `${topic}_아이언맨_게임.html`
+    };
+};
 
+/** 완성된 HTML을 파일로 내려받는다. */
+export const downloadIronmanHTML = (html, fileName) => {
     try {
         const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `${topic}_아이언맨_게임.html`;
+        link.download = fileName;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -96,6 +113,13 @@ export const generateIronmanHTML = async (topic, questions, grade = '', studentC
         console.error('[IronmanEngine] HTML Save failed:', err);
         throw err;
     }
+};
+
+/** 생성 후 곧바로 내려받기까지 한 번에 처리한다. */
+export const generateIronmanHTML = async (topic, questions, grade = '', studentCount = 24) => {
+    const game = buildIronmanGame(topic, questions, grade, studentCount);
+    downloadIronmanHTML(game.html, game.fileName);
+    return game;
 };
 
 function renderIronmanDocument({ topic, grade, studentCount, boards }) {
