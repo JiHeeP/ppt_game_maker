@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   Sparkles, Layout, Trophy, Settings, X, Key, CheckCircle,
   Zap, FileText, Grid, Library, Layers, Target, Settings2,
-  ChevronLeft, ChevronRight, History, User, LogOut, Menu, FileUp
+  ChevronLeft, ChevronRight, History, User, LogOut, Menu, FileUp, Shield
 } from 'lucide-react'
 import { extractTextFromPDF } from './lib/pdfHelper'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -18,6 +18,7 @@ import { generateGrabPPT } from './lib/gameEngines/grabEngine'
 import { generateLandGrabPDF } from './lib/gameEngines/landGrabEngine'
 import { generateBingoVerticalPDF, generateBingoVerticalPPT } from './lib/gameEngines/bingoEngine'
 import { generateAdvancePDF, generateAdvancePPT } from './lib/gameEngines/advanceEngine'
+import { generateIronmanHTML, IRONMAN_CELLS_PER_BOARD, IRONMAN_DEFAULT_QUESTION_COUNT } from './lib/gameEngines/ironmanEngine'
 import { generateQuizQuestions } from './lib/aiService'
 
 import './App.css'
@@ -38,6 +39,7 @@ const GAMES = [
   { id: 9, name: '빙고', type: 'PDF', icon: Grid, description: '수업 키워드로 채우는 빙고 찬스' },
   { id: 11, name: '고고 전진', type: 'PDF', icon: MoveIcon, description: '주사위를 굴려 단계를 넘어가는 전진형' },
   { id: 13, name: '탑텐짝찾기', type: 'PDF', icon: Library, description: '서로 관련있는 카드 짝궁 찾기' },
+  { id: 14, name: '아이언맨', type: 'HTML', icon: Shield, description: '칸을 열어 운명을 확인하는 생존 게임' },
 ];
 
 const GRADES = [
@@ -121,6 +123,9 @@ const App = () => {
     if (gameId === 8 && count !== 48) {
       return alert('땅따먹기 게임은 반드시 48개의 문제가 필요합니다. (6x8 보드)');
     }
+    if (gameId === 14 && count % IRONMAN_CELLS_PER_BOARD !== 0) {
+      return alert(`아이언맨 게임은 한 판이 ${IRONMAN_CELLS_PER_BOARD}칸이라 문제 수가 ${IRONMAN_CELLS_PER_BOARD}의 배수여야 합니다. (권장: ${IRONMAN_DEFAULT_QUESTION_COUNT}개 = ${IRONMAN_DEFAULT_QUESTION_COUNT / IRONMAN_CELLS_PER_BOARD}판)`);
+    }
     if (gameId === 13) {
       const requiredCardCount = studentCount * 4;
       const requiredPairCount = requiredCardCount / 2;
@@ -174,6 +179,7 @@ const App = () => {
         await generatePungiyoPDF(topic, questions, grade);
       }
       else if (gameId === 13) await generateTopTenMatchPDF(topic, questions);
+      else if (gameId === 14) await generateIronmanHTML(topic, questions, grade, studentCount);
       else await generateStandardPPT(topic, questions, selectedGame.name);
 
     } catch (error) {
@@ -367,7 +373,13 @@ const App = () => {
                       delay: idx * 0.03,
                       ease: "easeOut"
                     }}
-                    onClick={() => setSelectedGame(game)}
+                    onClick={() => {
+                      setSelectedGame(game)
+                      // 아이언맨은 한 판이 8칸이라 8의 배수만 유효하다
+                      if (game.id === 14 && count % IRONMAN_CELLS_PER_BOARD !== 0) {
+                        setCount(IRONMAN_DEFAULT_QUESTION_COUNT)
+                      }
+                    }}
                   >
                     <div className="magical-glow"></div>
                     <div className="game-type-badge">{game.type}</div>

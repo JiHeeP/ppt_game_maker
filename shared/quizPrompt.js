@@ -166,6 +166,16 @@ const getSubjectGuidance = (subject = "") => {
     return SUBJECT_GUIDANCE[subject] || [];
 };
 
+const GAME_GUIDANCE = {
+    "아이언맨": [
+        "화면 한 칸에 들어가는 짧은 문제입니다. 문항은 한 줄(공백 포함 25자 이내)로 쓰세요.",
+        "학생이 소리 내어 읽고 바로 답할 수 있어야 합니다. 긴 지문, 보기, 표는 넣지 마세요.",
+        "정답이 한 단어나 한 숫자로 떨어지는 형태를 우선하세요."
+    ]
+};
+
+const getGameGuidance = (gameName = "") => GAME_GUIDANCE[gameName] || [];
+
 export const buildQuizPrompt = ({ topic, detailedTopic, requestedCount, grade, gameName, pdfInstruction, subject, batchHint }) => `
             [핵심 주제]
             ${topic}
@@ -182,6 +192,10 @@ export const buildQuizPrompt = ({ topic, detailedTopic, requestedCount, grade, g
             대상 학년: ${grade}
             문항 수: ${requestedCount}
             게임 유형: ${gameName}
+
+            ${getGameGuidance(gameName).length > 0 ? `[게임별 출제 지침 - 반드시 지킬 것]
+            ${getGameGuidance(gameName).map(item => `- ${item}`).join("\n")}
+            ` : ''}
 
             ${getSubjectGuidance(subject).length > 0 ? `[과목별 출제 지침]
             ${getSubjectGuidance(subject).map(item => `- ${item}`).join("\n")}
