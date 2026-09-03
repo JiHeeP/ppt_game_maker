@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   Sparkles, Layout, Trophy, Settings, X, Key, CheckCircle,
   Zap, FileText, Grid, Library, Layers, Target, Settings2,
-  ChevronLeft, ChevronRight, History, User, LogOut, Menu, FileUp
+  ChevronLeft, ChevronRight, History, User, LogOut, Menu, FileUp, Shield, Play, Download
 } from 'lucide-react'
 import { extractTextFromPDF } from './lib/pdfHelper'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -18,6 +18,7 @@ import { generateGrabPPT } from './lib/gameEngines/grabEngine'
 import { generateLandGrabPDF } from './lib/gameEngines/landGrabEngine'
 import { generateBingoVerticalPDF, generateBingoVerticalPPT } from './lib/gameEngines/bingoEngine'
 import { generateAdvancePDF, generateAdvancePPT } from './lib/gameEngines/advanceEngine'
+import { buildIronmanGame, downloadIronmanHTML, IRONMAN_CELLS_PER_BOARD, IRONMAN_DEFAULT_QUESTION_COUNT } from './lib/gameEngines/ironmanEngine'
 import { generateQuizQuestions } from './lib/aiService'
 
 import './App.css'
@@ -38,6 +39,7 @@ const GAMES = [
   { id: 9, name: '빙고', type: 'PDF', icon: Grid, description: '수업 키워드로 채우는 빙고 찬스' },
   { id: 11, name: '고고 전진', type: 'PDF', icon: MoveIcon, description: '주사위를 굴려 단계를 넘어가는 전진형' },
   { id: 13, name: '탑텐짝찾기', type: 'PDF', icon: Library, description: '서로 관련있는 카드 짝궁 찾기' },
+  { id: 14, name: '아이언맨', type: 'HTML', icon: Shield, description: '칸을 열어 운명을 확인하는 생존 게임' },
 ];
 
 const GRADES = [
@@ -70,6 +72,8 @@ const App = () => {
   const [pdfData, setPdfData] = useState(null)
   const [pdfName, setPdfName] = useState('')
   const [isPdfLoading, setIsPdfLoading] = useState(false)
+  // 사이트에서 바로 실행하는 아이언맨 게임 { html, fileName, topic }
+  const [playingGame, setPlayingGame] = useState(null)
 
   const saveToLibrary = (newRecord) => {
     const updatedLibrary = [newRecord, ...library].slice(0, 20)
@@ -121,6 +125,9 @@ const App = () => {
     if (gameId === 8 && count !== 48) {
       return alert('땅따먹기 게임은 반드시 48개의 문제가 필요합니다. (6x8 보드)');
     }
+    if (gameId === 14 && count % IRONMAN_CELLS_PER_BOARD !== 0) {
+      return alert(`아이언맨 게임은 한 판이 ${IRONMAN_CELLS_PER_BOARD}칸이라 문제 수가 ${IRONMAN_CELLS_PER_BOARD}의 배수여야 합니다. (권장: ${IRONMAN_DEFAULT_QUESTION_COUNT}개 = ${IRONMAN_DEFAULT_QUESTION_COUNT / IRONMAN_CELLS_PER_BOARD}판)`);
+    }
     if (gameId === 13) {
       const requiredCardCount = studentCount * 4;
       const requiredPairCount = requiredCardCount / 2;
@@ -144,6 +151,14 @@ const App = () => {
 
       setLoadingStatus(`${selectedGame.name} 파일을 생성하고 있습니다...`)
 
+      const gameId = selectedGame.id;
+
+      // 아이언맨은 판 구성을 함께 보관해야 다시 열어도 생사가 그대로다
+      let ironmanGame = null;
+      if (gameId === 14) {
+        ironmanGame = buildIronmanGame(topic, questions, grade, studentCount);
+      }
+
       // Save to Library
       saveToLibrary({
         id: Date.now(),
@@ -153,10 +168,9 @@ const App = () => {
         gameName: selectedGame.name,
         gameId: selectedGame.id,
         grade,
+        ironmanBoards: ironmanGame ? ironmanGame.boards : undefined,
         date: new Date().toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
       })
-
-      const gameId = selectedGame.id;
 
       if (gameId === 9) {
         await generateBingoVerticalPDF(topic, questions);
@@ -174,6 +188,7 @@ const App = () => {
         await generatePungiyoPDF(topic, questions, grade);
       }
       else if (gameId === 13) await generateTopTenMatchPDF(topic, questions);
+      else if (gameId === 14) openPlayer(ironmanGame, topic);
       else await generateStandardPPT(topic, questions, selectedGame.name);
 
     } catch (error) {
@@ -182,6 +197,20 @@ const App = () => {
     } finally {
       setIsGenerating(false)
       setLoadingStatus('')
+    }
+  }
+
+  const openPlayer = (game, gameTopic) => {
+    setPlayingGame({ html: game.html, fileName: game.fileName, topic: gameTopic })
+  }
+
+  const handlePlay = (record) => {
+    try {
+      const game = buildIronmanGame(record.topic, record.questions, record.grade, studentCount, record.ironmanBoards)
+      openPlayer(game, record.topic)
+    } catch (error) {
+      console.error(error)
+      alert('게임을 여는 중 오류 발생: ' + error.message)
     }
   }
 
@@ -209,6 +238,10 @@ const App = () => {
         await generatePungiyoPDF(record.topic, record.questions, record.grade);
       }
       else if (record.gameId === 13) await generateTopTenMatchPDF(record.topic, record.questions);
+      else if (record.gameId === 14) {
+        const game = buildIronmanGame(record.topic, record.questions, record.grade, studentCount, record.ironmanBoards);
+        downloadIronmanHTML(game.html, game.fileName);
+      }
       else await generateStandardPPT(record.topic, record.questions, record.gameName);
     } catch (error) {
       console.error(error)
@@ -367,7 +400,13 @@ const App = () => {
                       delay: idx * 0.03,
                       ease: "easeOut"
                     }}
-                    onClick={() => setSelectedGame(game)}
+                    onClick={() => {
+                      setSelectedGame(game)
+                      // 아이언맨은 한 판이 8칸이라 8의 배수만 유효하다
+                      if (game.id === 14 && count % IRONMAN_CELLS_PER_BOARD !== 0) {
+                        setCount(IRONMAN_DEFAULT_QUESTION_COUNT)
+                      }
+                    }}
                   >
                     <div className="magical-glow"></div>
                     <div className="game-type-badge">{game.type}</div>
@@ -412,9 +451,16 @@ const App = () => {
                       <h3 className="item-topic">{item.topic}</h3>
                       <p className="item-game">{item.gameName}</p>
                     </div>
-                    <button className="btn-download-sm" onClick={() => handleDownload(item)}>
-                      <Sparkles size={16} /> 다시 다운로드
-                    </button>
+                    <div className="item-actions">
+                      {item.gameId === 14 && (
+                        <button className="btn-download-sm btn-play-sm" onClick={() => handlePlay(item)}>
+                          <Play size={16} /> 바로 실행
+                        </button>
+                      )}
+                      <button className="btn-download-sm" onClick={() => handleDownload(item)}>
+                        <Sparkles size={16} /> 다시 다운로드
+                      </button>
+                    </div>
                   </MotionDiv>
                 ))}
               </div>
@@ -422,6 +468,42 @@ const App = () => {
           </div>
         )}
       </main >
+
+      {/* 아이언맨 게임 플레이어 (사이트에서 바로 실행) */}
+      <AnimatePresence>
+        {playingGame && (
+          <MotionDiv
+            className="game-player"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <iframe
+              className="game-player__frame"
+              title={`${playingGame.topic} 아이언맨 게임`}
+              srcDoc={playingGame.html}
+              sandbox="allow-scripts"
+              allow="fullscreen"
+            />
+            <div className="game-player__tools">
+              <button
+                className="game-player__btn"
+                onClick={() => downloadIronmanHTML(playingGame.html, playingGame.fileName)}
+                title="이 게임을 HTML 파일로 저장 (인터넷 없이 실행 가능)"
+              >
+                <Download size={15} /> 파일로 저장
+              </button>
+              <button
+                className="game-player__btn game-player__btn--close"
+                onClick={() => setPlayingGame(null)}
+                title="게임 닫기"
+              >
+                <X size={15} /> 닫기
+              </button>
+            </div>
+          </MotionDiv>
+        )}
+      </AnimatePresence>
 
       {/* Loading Overlay */}
       < AnimatePresence >
