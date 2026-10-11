@@ -1,6 +1,6 @@
 /**
  * AI Service to generate educational quiz questions based on a topic and count.
- * Uses the local dev server in development and Netlify Functions in production.
+ * Uses the local dev server in development and Vercel Functions in production.
  * Supports client-side batch splitting for large question counts to avoid timeouts.
  */
 const BATCH_SIZE = 15;
@@ -14,12 +14,11 @@ const getQuizEndpoints = (configuredEndpoint) => {
         return [
             '/api/generate-quiz',
             'http://localhost:3000/api/generate-quiz',
-            'http://127.0.0.1:3000/api/generate-quiz',
-            '/.netlify/functions/api'
+            'http://127.0.0.1:3000/api/generate-quiz'
         ];
     }
 
-    return ['/.netlify/functions/api'];
+    return ['/api/generate-quiz'];
 };
 
 const _singleRequest = async (apiKey, topic, detailedTopic, count, grade, gameName, pdfContext, pdfData, subject, batchHint) => {
@@ -86,7 +85,7 @@ export const generateQuizQuestions = async (
             return await _singleRequest(apiKey, topic, detailedTopic, count, grade, gameName, pdfContext, pdfData, subject, "");
         }
 
-        // Split into batches for large counts to avoid Netlify 30s timeout
+        // Split into batches for large counts to avoid serverless function timeouts
         const batches = [];
         let remaining = count;
         let batchIndex = 0;
