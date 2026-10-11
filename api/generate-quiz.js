@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { getTopicFallbackQuestions, getHeuristicIssues, buildQuizPrompt, normalizeQuestions } from '../../shared/quizPrompt.js';
+import { getTopicFallbackQuestions, getHeuristicIssues, buildQuizPrompt, normalizeQuestions } from '../shared/quizPrompt.js';
 
 const getServerApiKey = () => (
     process.env.VITE_KIMI_API_KEY
@@ -461,21 +461,19 @@ const regenerateQuestionsFromIssues = async ({
     return normalizeQuestions(parsed, requestedCount);
 };
 
-export const handler = async (event, _context) => {
+export default async function handler(req, res) {
     // CORS headers
-    const headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS'
-    };
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
 
     // Handle preflight
-    if (event.httpMethod === 'OPTIONS') {
-        return { statusCode: 200, headers, body: '' };
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
     }
 
-    if (event.httpMethod !== 'POST') {
-        return { statusCode: 405, headers, body: 'Method Not Allowed' };
+    if (req.method !== 'POST') {
+        return res.status(405).send('Method Not Allowed');
     }
 
     try {
@@ -483,15 +481,11 @@ export const handler = async (event, _context) => {
         const TIME_LIMIT_MS = 28000;
         const remainingMs = () => Math.max(0, TIME_LIMIT_MS - (Date.now() - FUNCTION_START));
 
-        const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData: _pdfData, apiKey: clientApiKey, subject = "", batchHint = "" } = JSON.parse(event.body);
+        const { topic, detailedTopic = "", count, grade, gameName, pdfContext, pdfData: _pdfData, apiKey: clientApiKey, subject = "", batchHint = "" } = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
         const apiKey = (clientApiKey || getServerApiKey()).trim();
 
         if (!apiKey) {
-            return {
-                statusCode: 500,
-                headers,
-                body: JSON.stringify({ error: "KIMI_API_KEY is not configured in Netlify environment variables." })
-            };
+            return res.status(500).json({ error: "KIMI_API_KEY is not configured in Vercel environment variables." });
         }
 
         const openai = createMoonshotClient(apiKey);
@@ -503,11 +497,7 @@ export const handler = async (event, _context) => {
         if (detailedTopic?.trim()) {
             const fallbackQuestions = getTopicFallbackQuestions(topic, detailedTopic, requestedCount);
             if (fallbackQuestions) {
-                return {
-                    statusCode: 200,
-                    headers,
-                    body: JSON.stringify(fallbackQuestions)
-                };
+                return res.status(200).json(fallbackQuestions);
             }
         }
 
@@ -523,11 +513,11 @@ export const handler = async (event, _context) => {
         });
 
         // 단일 API 호출 - 30초 제한 내에서 1번만 호출
-        console.log(`Calling Kimi API (Netlify) with retry guard (${remainingMs()}ms remaining)`);
+        console.log(`Calling Kimi API (Vercel) with retry guard (${remainingMs()}ms remaining)`);
         const completion = await createChatCompletionWithRetry({
             client: openai,
             remainingMs,
-            operationLabel: "Netlify quiz generation API",
+            operationLabel: "Vercel quiz generation API",
             request: {
             model: "moonshot-v1-32k",
             messages: [
@@ -560,20 +550,12 @@ export const handler = async (event, _context) => {
             }
         }
 
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify(normalized)
-        };
+        return res.status(200).json(normalized);
 
     } catch (error) {
         console.error("Function Error:", error);
         const errorMessage = error.message || 'Unknown server error';
         const statusCode = error.status || 500;
-        return {
-            statusCode,
-            headers,
-            body: JSON.stringify({ error: errorMessage })
-        };
+        return res.status(statusCode).json({ error: errorMessage });
     }
-};
+}
