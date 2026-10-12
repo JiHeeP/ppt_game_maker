@@ -314,12 +314,12 @@ const validateDetailedRequestCompliance = async ({
             remainingMs,
             operationLabel: "Validation API",
             request: {
-                model: "moonshot-v1-32k",
+                model: "kimi-k2.6",
                 messages: [
                     { role: "system", content: "당신은 요구사항 위반을 엄격하게 잡아내는 수업용 퀴즈 검수 AI입니다. 한 문항이라도 조건을 어기면 전체 세트를 불합격 처리합니다." },
                     { role: "user", content: validationPrompt }
                 ],
-                temperature: 0,
+                thinking: { type: "disabled" },
                 max_tokens: 4096,
             }
         });
@@ -402,12 +402,12 @@ const _auditDetailedRequestCompliance = async ({
         client,
         operationLabel: "Audit API",
         request: {
-            model: "moonshot-v1-32k",
+            model: "kimi-k2.6",
             messages: [
                 { role: "system", content: "당신은 요구사항 위반을 엄격하게 판정하는 퀴즈 감사 AI입니다." },
                 { role: "user", content: auditPrompt }
             ],
-            temperature: 0,
+            thinking: { type: "disabled" },
             max_tokens: 1500,
         }
     });
@@ -460,12 +460,12 @@ const regenerateQuestionsFromIssues = async ({
         client,
         operationLabel: "Regeneration API",
         request: {
-            model: "moonshot-v1-32k",
+            model: "kimi-k2.6",
             messages: [
                 { role: "system", content: "당신은 요구사항 위반을 수정하기 위해 전체 문제 세트를 새로 생성하는 AI입니다." },
                 { role: "user", content: regenerationPrompt }
             ],
-            temperature: 0,
+            thinking: { type: "disabled" },
             max_tokens: 4096,
         }
     });
@@ -512,7 +512,7 @@ app.post('/api/generate-quiz', async (req, res) => {
                 remainingMs,
                 operationLabel: "Quiz generation API",
                 request: {
-                    model: "moonshot-v1-32k",
+                    model: "kimi-k2.6",
                     messages: [
                         { role: "system", content: "당신은 교육용 퀴즈를 생성하는 AI 어시스턴트입니다." },
                         { role: "user", content: promptText },
@@ -524,7 +524,7 @@ app.post('/api/generate-quiz', async (req, res) => {
                             }]
                             : [])
                     ],
-                    temperature: 0.1,
+                    thinking: { type: "disabled" },
                     max_tokens: 4096,
                 }
             });
