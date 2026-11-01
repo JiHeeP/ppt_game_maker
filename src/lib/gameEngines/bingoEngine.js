@@ -26,7 +26,6 @@ export const generateBingoPDF = async (topic, questions) => {
         // 'l' for landscape orientation
         const pdf = new jsPDF('l', 'mm', 'a4');
         const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
 
         const canvasWidth = canvas.width;
         const canvasHeight = canvas.height;
@@ -42,28 +41,6 @@ export const generateBingoPDF = async (topic, questions) => {
     } finally {
         document.body.removeChild(container);
     }
-};
-
-const getShape = (pres, name) => {
-    // 0. Ensure pres.shapes exists
-    const shapes = pres.shapes || pres.ShapeType || (pptxgen && pptxgen.shapes) || (pptxgen && pptxgen.ShapeType);
-
-    if (!shapes) {
-        console.error('[BingoEngine] shapes/ShapeType object is completely missing!');
-        return name.toLowerCase(); // Desperate fallback
-    }
-
-    // 1. Try exact match
-    if (shapes[name]) return shapes[name];
-
-    // 2. Try case-insensitive search
-    const lowerName = name.toLowerCase();
-    const key = Object.keys(shapes).find(k => k.toLowerCase() === lowerName);
-    if (key) return shapes[key];
-
-    // 3. Fallback
-    console.warn(`[BingoEngine] Shape constant '${name}' NOT found. Falling back to string.`);
-    return lowerName;
 };
 
 /**

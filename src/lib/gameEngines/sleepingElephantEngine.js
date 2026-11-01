@@ -92,7 +92,7 @@ function addElephantTitleSlide(pres, type, topic) {
 /**
  * 게임 메인 그리드 슬라이드 생성
  */
-function addElephantGridSlide(pres, header, fragments, revealIdx, topic) {
+function addElephantGridSlide(pres, header, fragments, revealIdx, _topic) {
     let slide = pres.addSlide();
     slide.background = { color: "FFFFFF" };
 
