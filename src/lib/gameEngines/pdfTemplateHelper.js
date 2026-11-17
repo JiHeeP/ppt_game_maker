@@ -1,387 +1,256 @@
 /**
- * Helper to generate HTML templates for PDF worksheets.
+ * PDF 학습지 HTML 템플릿.
+ * 모든 함수는 "쪽 단위 HTML 배열"을 돌려준다. (renderPagesToPdf 로 A4 PDF 를 만든다)
+ * - 세로 A4 = 1000 x 1414 px, 가로 A4 = 1414 x 1000 px
+ * - A4 한 장을 꽉 채우도록 줄 높이·글자 크기를 문항 수에 맞춰 계산한다.
  */
 
-export const getBingoTemplate = (topic, questions) => {
-    // Enforce max 20 questions
-    const finalQuestions = questions.slice(0, 20);
-    const numQuestions = finalQuestions.length;
-    // Calculate m such that m*m <= numQuestions, common for Bingo (3x3 or 4x4)
-    const m = Math.floor(Math.sqrt(numQuestions));
-    const gridSize = m * m;
+const FONT_STACK = "'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', 'WenQuanYi Zen Hei', sans-serif";
 
-    return `
-        <div style="padding: 25px; font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; color: #000; width: 1414px; background: white; height: 1000px; display: flex; box-sizing: border-box; gap: 30px; overflow: hidden;">
-            
-            <!-- Left Side: Bingo Board (1/3 width) -->
-            <div style="flex: 1; display: flex; flex-direction: column; border-right: 3px solid #000; padding-right: 25px;">
-                <div style="margin-bottom: 25px; padding-bottom: 10px; border-bottom: 2px solid #000; display: flex; justify-content: space-between; align-items: baseline;">
-                    <h1 style="font-size: 24px; margin: 0; font-weight: 900;">🎲 주제: ${topic}</h1>
-                    <span style="font-size: 18px; font-weight: bold; border-left: 1px solid #000; padding-left: 15px;">이름: ________</span>
-                </div>
+const esc = (s = "") => String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-                <div style="flex-grow: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;">
-                    <div style="display: grid; grid-template-columns: repeat(${m}, 1fr); width: 100%; border: 3px solid #000; background: #000; aspect-ratio: 1/1; box-shadow: 10px 10px 0px rgba(0,0,0,0.1);">
-                        ${Array.from({ length: gridSize }).map(() => `
-                            <div style="border: 1px solid #000; display: flex; align-items: center; justify-content: center; background: white;">
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right Side: Questions Table (2/3 width) -->
-            <div style="flex: 2; display: flex; flex-direction: column;">
-                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #000; padding-bottom: 8px; margin-bottom: 10px;">
-                    <h3 style="font-size: 22px; margin: 0; font-weight: 900;">📝 퀴즈 질문 리스트</h3>
-                    <span style="font-size: 12px; color: #666;">* 최대 20문항</span>
-                </div>
-                
-                <div style="display: grid; grid-template-columns: 1fr 1fr; border: 1.5px solid #000; height: 100%; overflow: hidden;">
-                    ${finalQuestions.map((q, idx) => `
-                        <div style="border: 0.5px solid #000; padding: 8px 12px; display: flex; flex-direction: column; justify-content: space-between; min-height: 80px;">
-                            <div style="font-size: 14px; line-height: 1.4;">
-                                <strong>${idx + 1}.</strong> ${q.question}
-                            </div>
-                            <div style="margin-top: auto; color: #444; font-size: 11px; border-top: 1px solid #eee; padding-top: 4px;">
-                                답: ___________________________________
-                            </div>
-                        </div>
-                    `).join('')}
-                    <!-- Empty cells fill -->
-                    ${Array.from({ length: (20 - finalQuestions.length) }).map(() => `
-                        <div style="border: 0.5px solid #000; background: #fafafa;"></div>
-                    `).join('')}
-                </div>
-
-                </div>
-            </div>
-        </div>
-    `;
-};
-
-export const getBingoVerticalTemplate = (topic, questions) => {
-    // Enforce max 20 questions
-    const finalQuestions = questions.slice(0, 20);
-    const q1to6 = finalQuestions.slice(0, 6);
-    const q7to20 = finalQuestions.slice(6);
-
-    const numQuestions = finalQuestions.length;
-    const m = Math.floor(Math.sqrt(numQuestions));
-    const gridSize = m * m;
-
-    return `
-        <div style="font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; color: #000; width: 1000px; background: white; display: flex; flex-direction: column; box-sizing: border-box;">
-            
-            <!-- PAGE 1: Header + Grid + Q1-6 -->
-            <div data-bingo-page="1" style="padding: 50px; height: 1414px; display: flex; flex-direction: column; box-sizing: border-box; border-bottom: 2px dashed #ccc;">
-                <!-- Header Section -->
-                <div style="margin-bottom: 30px; padding-bottom: 20px; border-bottom: 4px solid #000; display: flex; justify-content: space-between; align-items: baseline;">
-                    <h1 style="font-size: 38px; margin: 0; font-weight: 900;">🎲 주제: ${topic}</h1>
-                    <span style="font-size: 26px; font-weight: bold; border-left: 3px solid #000; padding-left: 25px;">이름: ________</span>
-                </div>
-
-                <!-- Bingo Grid Section (Middle) -->
-                <div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 40px;">
-                    <div style="display: grid; grid-template-columns: repeat(${m}, 1fr); width: 680px; border: 5px solid #000; background: #000; aspect-ratio: 1/1; box-shadow: 15px 15px 0px rgba(0,0,0,0.05);">
-                        ${Array.from({ length: gridSize }).map(() => `
-                            <div style="border: 1px solid #000; display: flex; align-items: center; justify-content: center; background: white;">
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-
-                <!-- Q1-6 (2 columns) -->
-                <div style="flex-grow: 1; border-top: 3px solid #000; padding-top: 30px;">
-                    <h3 style="font-size: 26px; border-bottom: 2px solid #000; padding-bottom: 10px; margin: 0 0 20px 0; font-weight: 900;">📝 퀴즈 질문 (1-6)</h3>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; column-gap: 40px; row-gap: 20px;">
-                        ${q1to6.map((q, idx) => `
-                            <div style="border-bottom: 1.5px solid #eee; padding-bottom: 15px;">
-                                <div style="font-size: 19px; line-height: 1.5;">
-                                    <strong>${idx + 1}.</strong> ${q.question}
-                                </div>
-                                <div style="margin-top: 8px; color: #444; font-size: 14px;">
-                                    답: ___________________________________
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            </div>
-
-            <!-- PAGE 2: Q7-20 (Only if exists) -->
-            ${q7to20.length > 0 ? `
-            <div data-bingo-page="2" style="padding: 50px; height: 1414px; display: flex; flex-direction: column; box-sizing: border-box;">
-                <h3 style="font-size: 26px; border-bottom: 3px solid #000; padding-bottom: 12px; margin: 0 0 25px 0; font-weight: 900;">📝 퀴즈 질문 (7번 이후)</h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; column-gap: 40px; row-gap: 20px;">
-                    ${q7to20.map((q, idx) => `
-                        <div style="border-bottom: 1.5px solid #eee; padding-bottom: 15px;">
-                            <div style="font-size: 19px; line-height: 1.5;">
-                                <strong>${idx + 7}.</strong> ${q.question}
-                            </div>
-                            <div style="margin-top: 8px; color: #444; font-size: 14px;">
-                                답: ___________________________________
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-            ` : ''}
-        </div>
-    `;
-};
-
-export const getAdvanceTemplate = (topic, questions) => {
-    const n = questions.length;
-    const perStep = Math.floor(n / 6);
-
-    const stages = [];
-    for (let i = 0; i < 5; i++) {
-        stages.push(questions.slice(i * perStep, (i + 1) * perStep));
-    }
-    stages.push(questions.slice(5 * perStep));
-
-    return `
-        <div style="font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; color: #000; width: 1000px; background: white; display: flex; flex-direction: column; box-sizing: border-box;">
-            
-            <style>
-                .page {
-                    padding: 50px;
-                    height: 1414px;
-                    display: flex;
-                    flex-direction: column;
-                    box-sizing: border-box;
-                    border-bottom: 2px dashed #000;
-                }
-                .header {
-                    margin-bottom: 30px;
-                    padding-bottom: 20px;
-                    border-bottom: 5px solid #000;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: baseline;
-                }
-                .stage-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin-bottom: 25px;
-                    table-layout: fixed;
-                }
-                .stage-table th, .stage-table td {
-                    border: 2px solid #000;
-                    padding: 15px;
-                    word-break: break-all;
-                }
-                .stage-label {
-                    width: 2.4cm !important;
-                    text-align: center;
-                    font-weight: bold;
-                    font-size: 28px;
-                    background: #fff;
-                }
-                .question-cell {
-                    text-align: left;
-                    font-size: 19px;
-                    line-height: 1.5;
-                    background: #fff;
-                }
-                .answer-cell {
-                    width: 4.5cm;
-                    background: #fff;
-                }
-                .stage-num {
-                    font-size: 50px;
-                    display: block;
-                    font-weight: 900;
-                }
-                .stage-text {
-                    font-size: 24px;
-                }
-            </style>
-
-            <!-- PAGE 1: Steps 1-3 -->
-            <div class="page">
-                <div class="header">
-                    <h1 style="font-size: 40px; margin: 0; font-weight: 900;">🚀 ${topic} - 고고전진!</h1>
-                    <span style="font-size: 26px; font-weight: bold; border-left: 4px solid #000; padding-left: 20px;">이름: ________</span>
-                </div>
-
-                <div style="flex-grow: 1;">
-                    ${stages.slice(0, 3).map((stageQuestions, stageIdx) => `
-                        <table class="stage-table">
-                            ${(stageQuestions.length === 0 ? [{ question: "(문제가 없습니다)", isPlaceholder: true }] : stageQuestions).map((q, qIdx) => `
-                                <tr>
-                                    ${qIdx === 0 ? `
-                                        <td rowspan="${Math.max(1, stageQuestions.length)}" class="stage-label">
-                                            <span class="stage-num">${stageIdx + 1}</span>
-                                            <span class="stage-text">단계</span>
-                                            ${stageQuestions[0]?.theme ? `<div style="font-size: 14px; margin-top: 10px; color: #444; font-weight: normal; word-break: keep-all;">${stageQuestions[0].theme}</div>` : ''}
-                                        </td>
-                                    ` : ''}
-                                    <td class="question-cell" style="${q.isPlaceholder ? 'color: #ccc;' : ''}">${q.question}</td>
-                                    <td class="answer-cell"></td>
-                                </tr>
-                            `).join('')}
-                        </table>
-                    `).join('')}
-                </div>
-                <div style="text-align: center; color: #000; font-size: 14px; font-weight: bold;">1 / 2 페이지</div>
-            </div>
-
-            <!-- PAGE 2: Steps 4-6 -->
-            <div class="page">
-                <div class="header">
-                    <h1 style="font-size: 40px; margin: 0; font-weight: 900;">🚀 ${topic} - 고고전진! (연결)</h1>
-                </div>
-
-                <div style="flex-grow: 1;">
-                    ${stages.slice(3, 6).map((stageQuestions, stageIdx) => `
-                        <table class="stage-table">
-                            ${(stageQuestions.length === 0 ? [{ question: "(문제가 없습니다)", isPlaceholder: true }] : stageQuestions).map((q, qIdx) => `
-                                <tr>
-                                    ${qIdx === 0 ? `
-                                        <td rowspan="${Math.max(1, stageQuestions.length)}" class="stage-label">
-                                            <span class="stage-num">${stageIdx + 4}</span>
-                                            <span class="stage-text">단계</span>
-                                            ${stageQuestions[0]?.theme ? `<div style="font-size: 14px; margin-top: 10px; color: #444; font-weight: normal; word-break: keep-all;">${stageQuestions[0].theme}</div>` : ''}
-                                        </td>
-                                    ` : ''}
-                                    <td class="question-cell" style="${q.isPlaceholder ? 'color: #ccc;' : ''}">${q.question}</td>
-                                    <td class="answer-cell"></td>
-                                </tr>
-                            `).join('')}
-                        </table>
-                    `).join('')}
-                </div>
-                <div style="text-align: center; color: #000; font-size: 14px; font-weight: bold;">2 / 2 페이지</div>
-            </div>
-        </div>
-    `;
-};
-
-export const getLandGrabTemplate = (topic, questions) => {
-    // 6 rows * 8 columns = 48 cells
-    const cells = Array.from({ length: 48 }).map((_, i) => questions[i] || { question: `(문제 ${i + 1})`, isPlaceholder: true });
-
-    return `
-        <div style="padding: 1.5cm; font-family: 'Malgun Gothic', sans-serif; color: #000; width: 1122px; height: 793px; background: white; box-sizing: border-box; display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 0.5cm; border-bottom: 3px solid #000; padding-bottom: 10px;">
-                <h1 style="font-size: 28px; margin: 0; font-weight: 900;">🗺️ 땅따먹기 놀이: ${topic}</h1>
-                <span style="font-size: 18px; font-weight: bold;">이름: ______________</span>
-            </div>
-            
-            <div style="flex-grow: 1; display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(6, 1fr); border: 2px solid #000; background: #000; gap: 1px;">
-                ${cells.map((q, idx) => `
-                    <div style="background: white; padding: 5px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; overflow: hidden; position: relative; height: 100%;">
-                        <span style="position: absolute; top: 2px; left: 4px; font-size: 10px; color: #ccc;">${idx + 1}</span>
-                        <div style="font-size: ${q.question.length > 20 ? '11px' : q.question.length > 10 ? '13px' : '15px'}; line-height: 1.2; word-break: keep-all; font-weight: bold;">
-                            ${q.question}
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-            
-            <div style="margin-top: 0.5cm; font-size: 12px; color: #444; display: flex; justify-content: space-between;">
-                <span>* 규칙: 가위바위보를 이긴 사람이 칸을 선택하고, 문제를 맞히면 자기 땅이 됩니다.</span>
-                <span>Antigravity PPT Game Maker</span>
-            </div>
-        </div>
-    `;
-};
-export const getPungiyoTemplate = (topic, _questions, grade) => {
-    const isHighGrade = !grade.includes('1학년') && !grade.includes('2학년');
-
-    // Generate scores based on grade
-    const pungiyoScores = isHighGrade
-        ? ['+1', '+2', '+3', '+5', '+10', 'x1', 'x3', 'x5', 'x7', 'x10']
-        : ['+1', '+2', '+3', '+5', '+10', '+1', '+2', '+3', '+5', '+10'];
-
-    // Shuffle scores
-    for (let i = pungiyoScores.length - 1; i > 0; i--) {
+const shuffle = (arr) => {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [pungiyoScores[i], pungiyoScores[j]] = [pungiyoScores[j], pungiyoScores[i]];
+        [a[i], a[j]] = [a[j], a[i]];
     }
-
-    return `
-        <div style="padding: 40px; font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; color: #000; width: 1000px; height: 1414px; background: white; box-sizing: border-box; display: flex; flex-direction: column;">
-            <div style="margin-bottom: 20px; border: 4px solid #000; display: flex; align-items: stretch;">
-                <div style="flex: 3; padding: 20px; text-align: center; font-size: 34px; font-weight: 900; border-right: 4px solid #000; display: flex; align-items: center; justify-content: center;">
-                    ${topic} (뻥이요!)
-                </div>
-                <div style="flex: 1; padding: 20px; font-size: 24px; font-weight: bold; display: flex; align-items: center;">
-                    이름:
-                </div>
-            </div>
-
-            <div style="flex-grow: 1;">
-                <table style="width: 100%; height: 90%; border-collapse: collapse; border: 4px solid #000;">
-                    <thead>
-                        <tr style="background: #f2f2f2;">
-                            <th style="border: 2px solid #000; padding: 10px; font-size: 22px; width: 45%;">퀴즈 문제</th>
-                            <th style="border: 2px solid #000; padding: 10px; font-size: 22px; width: 10%;">답</th>
-                            <th style="border: 2px solid #000; padding: 10px; font-size: 22px; width: 10%;">점수</th>
-                            <th style="border: 2px solid #000; padding: 10px; font-size: 22px; width: 15%; color: #d35400;">뻥이요</th>
-                            <th style="border: 2px solid #000; padding: 10px; font-size: 22px; width: 20%;">최종 점수</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${Array.from({ length: 10 }).map((_, i) => `
-                            <tr style="height: 105px;">
-                                <td style="border: 2px solid #000;"></td>
-                                <td style="border: 2px solid #000;"></td>
-                                <td style="border: 2px solid #000;"></td>
-                                <td style="border: 2px solid #000; text-align: center; font-size: 28px; font-weight: 900; background: #fffcf0;">
-                                    ${pungiyoScores[i]}
-                                </td>
-                                <td style="border: 2px solid #000;"></td>
-                            </tr>
-                        `).join('')}
-                        <tr style="height: 90px;">
-                            <td colspan="4" style="border: 2px solid #000; text-align: center; font-size: 30px; font-weight: 900; background: #f2f2f2;">누적 합계 점수</td>
-                            <td style="border: 2px solid #000;"></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    `;
+    return a;
 };
 
-export const getTopTenMatchTemplate = (topic, pairs) => {
-    // pairs matches AI output: { question, answer }
-    // Row 1 & Row 2 are pairs (4 columns)
-    // Row 3 & Row 4 are pairs (4 columns)
+const chunk = (arr, size) => {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+};
 
-    const pad = (arr) => {
-        const padded = arr.slice(0, 4);
-        while (padded.length < 4) padded.push('');
-        return padded;
+const fitPx = (text, sizes) => {
+    const len = String(text).replace(/\s+/g, "").length;
+    if (len <= 6) return sizes[0];
+    if (len <= 12) return sizes[1];
+    if (len <= 20) return sizes[2];
+    if (len <= 30) return sizes[3];
+    return sizes[4];
+};
+
+const portrait = (inner, { padding = '56px 60px' } = {}) => `
+    <div style="width:1000px;height:1414px;padding:${padding};box-sizing:border-box;background:#fff;color:#111;font-family:${FONT_STACK};display:flex;flex-direction:column;">
+        ${inner}
+    </div>`;
+
+const landscape = (inner, { padding = '44px 50px' } = {}) => `
+    <div style="width:1414px;height:1000px;padding:${padding};box-sizing:border-box;background:#fff;color:#111;font-family:${FONT_STACK};display:flex;flex-direction:column;">
+        ${inner}
+    </div>`;
+
+const header = (title, { name = true, sub = '' } = {}) => `
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:4px solid #111;padding-bottom:12px;margin-bottom:22px;flex-shrink:0;">
+        <div>
+            ${sub ? `<div style="font-size:18px;font-weight:700;color:#555;margin-bottom:4px;">${esc(sub)}</div>` : ''}
+            <div style="font-size:34px;font-weight:900;line-height:1.2;">${esc(title)}</div>
+        </div>
+        ${name ? `<div style="font-size:22px;font-weight:700;white-space:nowrap;">번호 ______ &nbsp; 이름 ____________</div>` : ''}
+    </div>`;
+
+const footer = (text) => `
+    <div style="flex-shrink:0;margin-top:14px;font-size:15px;color:#555;text-align:center;">${esc(text)}</div>`;
+
+/* ------------------------------------------------------------------ */
+/* 땅따먹기: 가로 A4 한 장, 8 x 6 = 48칸                                 */
+/* ------------------------------------------------------------------ */
+export const getLandGrabPages = (topic, questions) => {
+    const cells = Array.from({ length: 48 }).map((_, i) => questions[i] || { question: '' });
+    const board = landscape(`
+        ${header(`땅따먹기 · ${topic}`)}
+        <div style="flex:1;display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(6,1fr);border:3px solid #111;background:#111;gap:2px;">
+            ${cells.map((q, idx) => `
+                <div style="background:#fff;position:relative;display:flex;align-items:center;justify-content:center;text-align:center;padding:22px 8px 8px;overflow:hidden;">
+                    <span style="position:absolute;top:5px;left:8px;font-size:15px;font-weight:700;color:#9aa0a6;">${idx + 1}</span>
+                    <div style="font-size:${fitPx(q.question, [24, 21, 19, 17, 15])}px;font-weight:700;line-height:1.3;word-break:keep-all;">${esc(q.question)}</div>
+                </div>`).join('')}
+        </div>
+        ${footer('규칙: 가위바위보를 이긴 사람이 칸을 고르고, 문제를 맞히면 그 칸이 자기 땅이 됩니다.')}
+    `);
+    return [board];
+};
+
+/* ------------------------------------------------------------------ */
+/* 빙고: 세로 A4. 16문항 이하는 한 장(빙고판 + 문제), 그보다 많으면 두 장   */
+/* ------------------------------------------------------------------ */
+export const getBingoPages = (topic, questions) => {
+    const qs = questions.slice(0, 20);
+    const m = Math.max(2, Math.floor(Math.sqrt(qs.length)));
+    const grid = (size) => `
+        <div style="display:flex;justify-content:center;flex-shrink:0;">
+            <div style="display:grid;grid-template-columns:repeat(${m},1fr);grid-template-rows:repeat(${m},1fr);width:${size}px;height:${size}px;border:4px solid #111;background:#111;gap:2px;">
+                ${Array.from({ length: m * m }).map(() => `<div style="background:#fff;"></div>`).join('')}
+            </div>
+        </div>`;
+    const list = (items, startNo, fontSize, height) => {
+        const rows = Math.max(1, Math.ceil(items.length / 2));
+        return `
+        <div style="height:${height}px;flex-shrink:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(${rows},1fr);column-gap:28px;overflow:hidden;">
+            ${items.map((q, i) => `
+                <div style="border-bottom:1.5px solid #bdbdbd;display:flex;flex-direction:column;justify-content:space-between;padding:6px 2px;overflow:hidden;">
+                    <div style="font-size:${fontSize}px;line-height:1.35;word-break:keep-all;"><b>${startNo + i}.</b> ${esc(q.question)}</div>
+                    <div style="font-size:${fontSize - 2}px;color:#777;">답:</div>
+                </div>`).join('')}
+        </div>`;
     };
 
-    const grid = [
-        pad(pairs.slice(0, 4).map(p => p.question)),
-        pad(pairs.slice(0, 4).map(p => p.answer)),
-        pad(pairs.slice(4, 8).map(p => p.question)),
-        pad(pairs.slice(4, 8).map(p => p.answer))
+    if (qs.length <= 16) {
+        return [portrait(`
+            ${header(`빙고 · ${topic}`)}
+            ${grid(500)}
+            <div style="font-size:24px;font-weight:900;margin:18px 0 6px;flex-shrink:0;">문제</div>
+            ${list(qs, 1, 18, 1414 - 112 - 92 - 500 - 60)}
+        `)];
+    }
+    return [
+        portrait(`${header(`빙고 · ${topic}`)}<div style="flex:1;display:flex;align-items:center;justify-content:center;">${grid(840)}</div>`),
+        portrait(`${header(`빙고 · ${topic} (문제)`, { name: false })}${list(qs, 1, 21, 1414 - 112 - 92)}`)
     ];
+};
 
-    return `
-        <div style="padding: 10px; font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; color: #000; width: 1000px; height: 1414px; background: white; box-sizing: border-box; display: flex; flex-direction: column;">
-            <table style="width: 100%; height: 100%; border-collapse: collapse; border: 4px solid #000; table-layout: fixed;">
+/* ------------------------------------------------------------------ */
+/* 고고 전진: 6단계. 18문항 이하는 한 장, 많으면 두 장(1~3 / 4~6단계)     */
+/* ------------------------------------------------------------------ */
+export const splitAdvanceStages = (questions) => {
+    const n = questions.length;
+    const perStep = Math.floor(n / 6);
+    const stages = [];
+    for (let i = 0; i < 5; i++) stages.push(questions.slice(i * perStep, (i + 1) * perStep));
+    stages.push(questions.slice(5 * perStep));
+    return stages;
+};
+
+export const getAdvancePages = (topic, questions) => {
+    const stages = splitAdvanceStages(questions);
+    const groups = questions.length <= 18
+        ? [stages.map((s, i) => ({ s, no: i + 1 }))]
+        : [stages.slice(0, 3).map((s, i) => ({ s, no: i + 1 })), stages.slice(3).map((s, i) => ({ s, no: i + 4 }))];
+
+    return groups.map((group, pageIdx) => {
+        const rows = group.reduce((sum, g) => sum + Math.max(1, g.s.length), 0);
+        const available = 1414 - 112 - 100 - 50 - (group.length - 1) * 18;
+        const rowH = Math.min(130, Math.floor(available / rows));
+        const fontSize = rowH >= 90 ? 23 : rowH >= 70 ? 20 : 17;
+        return portrait(`
+            ${header(`고고 전진 · ${topic}`, { name: pageIdx === 0, sub: groups.length > 1 ? `${pageIdx + 1} / ${groups.length}쪽` : '' })}
+            <div style="flex:1;display:flex;flex-direction:column;gap:18px;">
+                ${group.map(({ s, no }) => `
+                    <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
+                        ${(s.length ? s : [{ question: '' }]).map((q, qi) => `
+                            <tr style="height:${rowH}px;">
+                                ${qi === 0 ? `<td rowspan="${Math.max(1, s.length)}" style="width:120px;border:2.5px solid #111;background:#f3f3f3;text-align:center;">
+                                    <div style="font-size:48px;font-weight:900;line-height:1;">${no}</div>
+                                    <div style="font-size:22px;font-weight:700;margin-top:4px;">단계</div>
+                                </td>` : ''}
+                                <td style="border:2px solid #111;padding:8px 16px;font-size:${fontSize}px;line-height:1.4;word-break:keep-all;">${esc(q.question)}</td>
+                                <td style="width:34%;border:2px solid #111;"></td>
+                            </tr>`).join('')}
+                    </table>`).join('')}
+            </div>
+            ${footer('주사위를 굴려 단계를 나아가고, 멈춘 단계의 문제를 풀어 오른쪽 칸에 답을 적으세요.')}
+        `);
+    });
+};
+
+/* ------------------------------------------------------------------ */
+/* 뻥이요!: 줄 수 = 문항 수 (한 쪽 최대 12줄). 보너스는 줄마다 미리 인쇄   */
+/* (학생이 자신 있는 답을 높은 보너스 줄에 적는 전략 놀이라서 보너스를 보이게 둔다) */
+/* ------------------------------------------------------------------ */
+export const getPungiyoScores = (count, grade = '') => {
+    const isLowGrade = /1-2|1학년|2학년/.test(grade);
+    const pool = isLowGrade
+        ? ['+1', '+2', '+3', '+5', '+10']
+        : ['+1', '+2', '+3', '+5', '+10', 'x1', 'x3', 'x5', 'x7', 'x10'];
+    const list = Array.from({ length: count }, (_, i) => pool[i % pool.length]);
+    return shuffle(list);
+};
+
+export const getPungiyoPages = (topic, questions, grade, scores = getPungiyoScores(questions.length, grade)) => {
+    const n = Math.max(1, questions.length);
+    const pages = chunk(Array.from({ length: n }, (_, i) => i), 12);
+    const th = (label, w, color = '#111') => `<th style="border:2px solid #111;padding:10px 4px;font-size:21px;width:${w};color:${color};">${label}</th>`;
+    return pages.map((rows, pageIdx) => {
+        const isLast = pageIdx === pages.length - 1;
+        const available = 1414 - 112 - 100 - 56 - (isLast ? 84 : 0);
+        const rowH = Math.min(110, Math.floor(available / rows.length));
+        return portrait(`
+            ${header(`뻥이요! · ${topic}`, { name: pageIdx === 0, sub: pages.length > 1 ? `${pageIdx + 1} / ${pages.length}쪽` : '' })}
+            <table style="width:100%;border-collapse:collapse;border:3px solid #111;table-layout:fixed;">
+                <thead><tr style="background:#f2f2f2;">
+                    ${th('문제', '30%')}${th('답', '28%')}${th('점수', '12%')}${th('뻥이요', '13%', '#d35400')}${th('최종 점수', '17%')}
+                </tr></thead>
                 <tbody>
-                    ${grid.map(row => `
-                        <tr style="height: 25%;">
-                            ${row.map(cell => `
-                                <td style="border: 2.5px solid #000; padding: 15px; text-align: center; vertical-align: middle; word-break: break-all; font-size: 24px; font-weight: 900; background: white; line-height: 1.3; width: 25%;">
-                                    <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%;">
-                                        ${cell || ''}
-                                    </div>
-                                </td>
-                            `).join('')}
-                        </tr>
-                    `).join('')}
+                    ${rows.map(i => `
+                        <tr style="height:${rowH}px;">
+                            <td style="border:2px solid #111;"></td>
+                            <td style="border:2px solid #111;"></td>
+                            <td style="border:2px solid #111;"></td>
+                            <td style="border:2px solid #111;text-align:center;font-size:30px;font-weight:900;background:#fff6e5;">${scores[i] || ''}</td>
+                            <td style="border:2px solid #111;"></td>
+                        </tr>`).join('')}
+                    ${isLast ? `<tr style="height:84px;">
+                        <td colspan="4" style="border:2px solid #111;text-align:center;font-size:28px;font-weight:900;background:#f2f2f2;">누적 합계 점수</td>
+                        <td style="border:2px solid #111;"></td>
+                    </tr>` : ''}
                 </tbody>
             </table>
-        </div>
-    `;
+        `);
+    });
 };
+
+/* ------------------------------------------------------------------ */
+/* 탑텐짝찾기: 한 쪽 = 8쌍 = 카드 16장(4 x 4). 카드 위치는 무작위로 섞는다 */
+/* (예전에는 문제 바로 아래에 답이 있어 위치만 보고도 짝을 알 수 있었음)   */
+/* ------------------------------------------------------------------ */
+export const getTopTenMatchPages = (topic, pairs) => chunk(pairs, 8).map((pagePairs) => {
+    const cards = shuffle([
+        ...pagePairs.map(p => ({ text: p.question, kind: 'q' })),
+        ...pagePairs.map(p => ({ text: p.answer, kind: 'a' }))
+    ]);
+    while (cards.length < 16) cards.push({ text: '', kind: '' });
+    return portrait(`
+        <div style="flex:1;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(4,1fr);border:3px solid #111;">
+            ${cards.map(c => `
+                <div style="border:1.5px dashed #555;position:relative;display:flex;align-items:center;justify-content:center;text-align:center;padding:30px 14px 14px;">
+                    ${c.kind ? `<span style="position:absolute;top:8px;left:10px;font-size:14px;font-weight:700;color:${c.kind === 'q' ? '#2f5ddb' : '#d35400'};">${c.kind === 'q' ? '문제' : '답'}</span>` : ''}
+                    <div style="font-size:${fitPx(c.text, [36, 30, 25, 22, 19])}px;font-weight:900;line-height:1.3;word-break:keep-all;">${esc(c.text)}</div>
+                </div>`).join('')}
+        </div>
+        <div style="flex-shrink:0;margin-top:8px;font-size:13px;color:#777;text-align:right;">${esc(topic)} · 탑텐짝찾기 · 점선을 따라 오려 쓰세요</div>
+    `, { padding: '28px 28px 18px' });
+});
+
+/* ------------------------------------------------------------------ */
+/* 선생님용 정답표 (땅따먹기·빙고·고고 전진·탑텐짝찾기 공통)              */
+/* ------------------------------------------------------------------ */
+export const getAnswerKeyPages = (topic, gameName, questions) => chunk(questions.map((q, i) => ({ ...q, no: i + 1 })), 48).map((items, pageIdx, all) => {
+    const twoCols = items.length > 20;
+    const cols = twoCols ? chunk(items, Math.ceil(items.length / 2)) : [items];
+    const fontSize = twoCols ? (items.length > 36 ? 14 : 16) : 19;
+    const table = (rows) => `
+        <table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:${fontSize}px;">
+            <thead><tr style="background:#f2f2f2;">
+                <th style="border:1.5px solid #111;width:44px;padding:6px 0;">번호</th>
+                <th style="border:1.5px solid #111;padding:6px;">문제</th>
+                <th style="border:1.5px solid #111;width:${twoCols ? '34%' : '30%'};padding:6px;">정답</th>
+            </tr></thead>
+            <tbody>
+                ${rows.map(r => `<tr>
+                    <td style="border:1.5px solid #111;text-align:center;padding:5px 0;">${r.no}</td>
+                    <td style="border:1.5px solid #111;padding:5px 8px;line-height:1.35;word-break:keep-all;">${esc(r.question)}</td>
+                    <td style="border:1.5px solid #111;padding:5px 8px;font-weight:900;color:#c2410c;word-break:keep-all;">${esc(r.answer)}</td>
+                </tr>`).join('')}
+            </tbody>
+        </table>`;
+    return portrait(`
+        ${header(`정답표 · ${topic}`, { name: false, sub: `${gameName} · 선생님용${all.length > 1 ? ` (${pageIdx + 1}/${all.length})` : ''}` })}
+        <div style="display:flex;gap:20px;align-items:flex-start;">
+            ${cols.map(c => `<div style="flex:1;">${table(c)}</div>`).join('')}
+        </div>
+    `);
+});
