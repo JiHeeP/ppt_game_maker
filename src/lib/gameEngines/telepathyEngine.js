@@ -17,8 +17,10 @@ export const generateTelepathyPPT = async (topic, questions) => {
 
     for (let i = 0; i < questions.length - 1; i += 2) {
         const round = i / 2 + 1;
-        const qA = questions[i];
-        const qB = questions[i + 1];
+        // 두 문제 중 어느 쪽이 A 가 될지도 무작위 (입력 순서대로 고정되지 않게)
+        const swap = Math.random() < 0.5;
+        const qA = swap ? questions[i + 1] : questions[i];
+        const qB = swap ? questions[i] : questions[i + 1];
         const teacherPicksA = Math.random() < 0.5;
         const tag = `${round}라운드`;
 

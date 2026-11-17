@@ -24,7 +24,14 @@ export const generateBaseballOxPPT = async (topic, questions) => {
     ], ctx);
     addMessageSlide(pres, ctx, "플레이 볼!", "모두 제자리에서 출발해요");
 
-    questions.forEach((q, idx) => {
+    // 문제 순서를 섞어 O/X 정답이 입력 순서대로 규칙적으로 나오지 않게 한다
+    const shuffled = questions.slice();
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    shuffled.forEach((q, idx) => {
         const ox = parseOx(q.answer);
 
         // 문제 슬라이드: 문장 + 아래에 O / X 안내
