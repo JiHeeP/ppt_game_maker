@@ -1,122 +1,56 @@
-import { jsPDF } from "jspdf";
-import html2canvas from "html2canvas";
 import pptxgen from "pptxgenjs";
-import { getAdvanceTemplate } from "./pdfTemplateHelper";
+import { getAdvancePages, getAnswerKeyPages, splitAdvanceStages } from "./pdfTemplateHelper";
+import { renderPagesToPdf } from "./pdfRender";
 
 /**
- * Advance Engine: Generates both PDF and PPT.
+ * 고고 전진: 미션 학습지 PDF + 선생님용 정답표 PDF
  */
 export const generateAdvancePDF = async (topic, questions) => {
-    console.log('[AdvanceEngine] Starting HTML-to-PDF generation...');
-
-    const container = document.createElement('div');
-    container.style.position = 'absolute';
-    container.style.left = '-9999px';
-    container.innerHTML = getAdvanceTemplate(topic, questions);
-    document.body.appendChild(container);
-
-    try {
-        const canvas = await html2canvas(container, {
-            scale: 2,
-            useCORS: true,
-            allowTaint: true
-        });
-
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-
-        const canvasWidth = canvas.width;
-        const canvasHeight = canvas.height;
-        const imgHeight = (canvasHeight * pdfWidth) / canvasWidth;
-
-        let heightLeft = imgHeight;
-        let position = 0;
-
-        // Page 1
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-        heightLeft -= pdfHeight;
-
-        // Page 2+
-        while (heightLeft > 0) {
-            position = heightLeft - imgHeight;
-            pdf.addPage();
-            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-            heightLeft -= pdfHeight;
-        }
-
-        pdf.save(`${topic}_고고전진_학습지.pdf`);
-    } catch (err) {
-        console.error('[AdvanceEngine] PDF Error:', err);
-        throw err;
-    } finally {
-        document.body.removeChild(container);
-    }
+    await renderPagesToPdf(getAdvancePages(topic, questions), { orientation: 'p', fileName: `${topic}_고고전진_학습지.pdf` });
+    await renderPagesToPdf(getAnswerKeyPages(topic, '고고 전진', questions), { orientation: 'p', fileName: `${topic}_고고전진_정답표.pdf` });
 };
 
+/**
+ * 고고 전진: 고쳐 쓸 수 있는 학습지 PPT (A4 세로, 한 장을 꽉 채움)
+ */
 export const generateAdvancePPT = async (topic, questions) => {
-    console.log('[AdvanceEngine] Starting PPTX generation...');
     const pres = new pptxgen();
     const font = "Malgun Gothic";
-
     pres.defineLayout({ name: 'A4_PORTRAIT', width: 8.27, height: 11.69 });
     pres.layout = 'A4_PORTRAIT';
 
-    const n = questions.length;
-    const perStep = Math.floor(n / 6);
-    const stages = [];
-    for (let i = 0; i < 5; i++) stages.push(questions.slice(i * perStep, (i + 1) * perStep));
-    stages.push(questions.slice(5 * perStep));
+    const stages = splitAdvanceStages(questions);
+    const groups = questions.length <= 18
+        ? [stages.map((s, i) => ({ s, no: i + 1 }))]
+        : [stages.slice(0, 3).map((s, i) => ({ s, no: i + 1 })), stages.slice(3).map((s, i) => ({ s, no: i + 4 }))];
+    const COL_WIDTHS = [1.0, 4.1, 2.17];
 
-    const COL_WIDTHS = [0.94, 4.33, 2.0]; // 0.94 inches ≈ 2.4cm
+    groups.forEach((group, pageIdx) => {
+        const slide = pres.addSlide();
+        slide.addText(`고고 전진 · ${topic}`, { x: 0.5, y: 0.35, w: 4.6, h: 0.6, fontSize: 22, bold: true, fontFace: font, valign: 'bottom' });
+        if (pageIdx === 0) {
+            slide.addText("번호 ____  이름 __________", { x: 5.0, y: 0.35, w: 2.8, h: 0.6, fontSize: 13, bold: true, fontFace: font, align: 'right', valign: 'bottom' });
+        }
+        slide.addShape('line', { x: 0.5, y: 1.0, w: 7.27, h: 0, line: { color: '111111', width: 2.5 } });
 
-    // PAGE 1: Steps 1-3
-    let slide1 = pres.addSlide();
-    slide1.addText(`${topic} - 고고전진!`, { x: 0.5, y: 0.4, w: 5.5, h: 0.6, fontSize: 24, bold: true, fontFace: font });
-    slide1.addText("이름: ________", { x: 6.2, y: 0.4, w: 1.6, h: 0.6, fontSize: 14, fontFace: font, border: { pt: 1, color: "000000" }, align: "center" });
-
-    let currentY1 = 1.2;
-    for (let sIdx = 0; sIdx < 3; sIdx++) {
-        const stageQs = stages[sIdx] || [];
-        const rowH = 0.6;
-        const tableData = stageQs.map((q, qIdx) => {
-            const row = [];
-            if (qIdx === 0) {
-                const stageLabel = `${sIdx + 1}단계` + (q.theme ? `\n(${q.theme})` : '');
-                row.push({ text: stageLabel, options: { rowspan: stageQs.length, fontSize: q.theme ? 10 : 16, bold: true, fontFace: font, align: 'center', valign: 'middle' } });
-            }
-            row.push({ text: q.question, options: { fontSize: 13, fontFace: font, h: rowH } });
-            row.push({ text: "", options: {} });
-            return row;
+        const rows = group.reduce((sum, g) => sum + Math.max(1, g.s.length), 0);
+        const gap = 0.15;
+        const rowH = Math.min(1.0, (11.69 - 1.25 - 0.6 - gap * (group.length - 1)) / rows);
+        const fontSize = rowH >= 0.75 ? 17 : rowH >= 0.6 ? 15 : 13;
+        let y = 1.25;
+        group.forEach(({ s, no }) => {
+            const qs = s.length ? s : [{ question: '' }];
+            const data = qs.map((q, qi) => {
+                const row = [];
+                if (qi === 0) row.push({ text: `${no}단계`, options: { rowspan: qs.length, fontSize: 18, bold: true, fontFace: font, align: 'center', valign: 'middle', fill: { color: 'F3F3F3' } } });
+                row.push({ text: q.question, options: { fontSize, fontFace: font, valign: 'middle' } });
+                row.push({ text: "", options: {} });
+                return row;
+            });
+            slide.addTable(data, { x: 0.5, y, w: 7.27, colW: COL_WIDTHS, rowH, border: { pt: 1.5, color: "111111" }, margin: 0.08 });
+            y += qs.length * rowH + gap;
         });
-
-        slide1.addTable(tableData, { x: 0.5, y: currentY1, w: 7.27, colWidths: COL_WIDTHS, border: { pt: 1, color: "000000" } });
-        currentY1 += (Math.max(1, stageQs.length) * rowH) + 0.3;
-    }
-
-    // PAGE 2: Steps 4-6
-    let slide2 = pres.addSlide();
-    slide2.addText(`${topic} - 고고전진! (연결)`, { x: 0.5, y: 0.4, w: 7.27, h: 0.6, fontSize: 22, bold: true, fontFace: font });
-
-    let currentY2 = 1.2;
-    for (let sIdx = 3; sIdx < 6; sIdx++) {
-        const stageQs = stages[sIdx] || [];
-        const rowH = 0.6;
-        const tableData = stageQs.map((q, qIdx) => {
-            const row = [];
-            if (qIdx === 0) {
-                const stageLabel = `${sIdx + 1}단계` + (q.theme ? `\n(${q.theme})` : '');
-                row.push({ text: stageLabel, options: { rowspan: stageQs.length, fontSize: q.theme ? 10 : 16, bold: true, fontFace: font, align: 'center', valign: 'middle' } });
-            }
-            row.push({ text: q.question, options: { fontSize: 13, fontFace: font, h: rowH } });
-            row.push({ text: "", options: {} });
-            return row;
-        });
-
-        slide2.addTable(tableData, { x: 0.5, y: currentY2, w: 7.27, colWidths: COL_WIDTHS, border: { pt: 1, color: "000000" } });
-        currentY2 += (Math.max(1, stageQs.length) * rowH) + 0.3;
-    }
+    });
 
     await pres.writeFile({ fileName: `${topic}_고고전진_학습지.pptx` });
 };

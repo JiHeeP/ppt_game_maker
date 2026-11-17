@@ -1,43 +1,17 @@
-import { jsPDF } from "jspdf";
-import html2canvas from "html2canvas";
-import { getLandGrabTemplate } from "./pdfTemplateHelper";
+import { getLandGrabPages, getAnswerKeyPages } from "./pdfTemplateHelper";
+import { renderPagesToPdf } from "./pdfRender";
 
 /**
- * Land Grab Engine: Generates a 6x8 grid PDF worksheet in LANDSCAPE.
+ * 땅따먹기: 가로 A4 보드 1장 + 선생님용 정답표
  */
 export const generateLandGrabPDF = async (topic, questions) => {
-    console.log('[LandGrabEngine] Starting HTML-to-PDF generation...');
-
-    const container = document.createElement('div');
-    container.style.position = 'absolute';
-    container.style.left = '-9999px';
-    container.innerHTML = getLandGrabTemplate(topic, questions);
-    document.body.appendChild(container);
-
-    try {
-        const canvas = await html2canvas(container, {
-            scale: 2,
-            useCORS: true,
-            allowTaint: true
-        });
-
-        const imgData = canvas.toDataURL('image/png');
-        // 'l' for landscape orientation
-        const pdf = new jsPDF('l', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-
-        const canvasWidth = canvas.width;
-        const canvasHeight = canvas.height;
-        const imgWidth = pdfWidth;
-        const imgHeight = (canvasHeight * pdfWidth) / canvasWidth;
-
-        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
-        pdf.save(`${topic}_땅따먹기.pdf`);
-        console.log('[LandGrabEngine] PDF generated successfully.');
-    } catch (err) {
-        console.error('[LandGrabEngine] Error:', err);
-        throw err;
-    } finally {
-        document.body.removeChild(container);
+    // 보드 칸 위치를 섞는다 (비슷한 문제가 한쪽에 몰리지 않게). 정답표는 섞인 칸 번호를 따른다.
+    const board = questions.slice(0, 48);
+    for (let i = board.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [board[i], board[j]] = [board[j], board[i]];
     }
+    questions = board;
+    await renderPagesToPdf(getLandGrabPages(topic, questions), { orientation: 'l', fileName: `${topic}_땅따먹기.pdf` });
+    await renderPagesToPdf(getAnswerKeyPages(topic, '땅따먹기', questions.slice(0, 48)), { orientation: 'p', fileName: `${topic}_땅따먹기_정답표.pdf` });
 };

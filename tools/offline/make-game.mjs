@@ -69,6 +69,10 @@ if (gameId === 1 && n % 2 !== 0) fail(`텔레파시는 한 라운드에 2문제�
 if (gameId === 11 && n < 12) fail(`고고 전진은 최소 12문제가 필요합니다. (현재 ${n}개)`);
 if (gameId === 8 && n !== 48) fail(`땅따먹기는 반드시 48문제가 필요합니다. (현재 ${n}개)`);
 if (gameId === 14 && n % 8 !== 0) fail(`아이언맨은 한 판이 8칸이라 8의 배수여야 합니다. (현재 ${n}개, 권장 40개)`);
+if (gameId === 10) {
+    const bad = questions.map((q, i) => [i + 1, q.answer.trim().toUpperCase()]).filter(([, a]) => a !== 'O' && a !== 'X');
+    if (bad.length) fail(`야구골든벨 OX 는 정답이 "O" 또는 "X" 여야 합니다. 확인할 문항: ${bad.map(([i]) => i).join(', ')}번`);
+}
 if (gameId === 13 && n !== studentCount * 2) fail(`탑텐짝찾기는 학생 수(${studentCount}명) × 2 = ${studentCount * 2}문제가 필요합니다. (현재 ${n}개)`);
 
 // ---------- 3. 엔진 묶기 ----------
