@@ -1,0 +1,18 @@
+{
+  "game": "집어!",
+  "topic": "식물의 한살이",
+  "grade": "초등 3-4",
+  "studentCount": 24,
+  "questions": [
+    { "question": "씨가 싹 트려면 꼭 필요한 것은 물과 무엇일까요?", "answer": "알맞은 온도", "wrongAnswer": "흙" },
+    { "question": "씨에서 처음 나오는 잎을 무엇이라고 할까요?", "answer": "떡잎", "wrongAnswer": "본잎" },
+    { "question": "떡잎 다음에 나오는 잎을 무엇이라고 할까요?", "answer": "본잎", "wrongAnswer": "꽃잎" },
+    { "question": "강낭콩 떡잎은 몇 장일까요?", "answer": "2장", "wrongAnswer": "1장" },
+    { "question": "옥수수 떡잎은 몇 장일까요?", "answer": "1장", "wrongAnswer": "2장" },
+    { "question": "꽃이 지고 나면 생겨서 씨를 품는 것은?", "answer": "열매", "wrongAnswer": "뿌리" },
+    { "question": "씨가 싹 터서 자라고 꽃이 피어 열매를 맺는 과정은?", "answer": "식물의 한살이", "wrongAnswer": "광합성" },
+    { "question": "한 해 안에 한살이를 마치는 식물을 무엇이라고 할까요?", "answer": "한해살이 식물", "wrongAnswer": "여러해살이 식물" },
+    { "question": "여러 해 동안 살면서 열매 맺기를 되풀이하는 식물은?", "answer": "여러해살이 식물", "wrongAnswer": "한해살이 식물" },
+    { "question": "사과나무는 한해살이와 여러해살이 중 무엇일까요?", "answer": "여러해살이 식물", "wrongAnswer": "한해살이 식물" }
+  ]
+}
