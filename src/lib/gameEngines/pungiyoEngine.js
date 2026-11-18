@@ -56,7 +56,7 @@ export const generatePungiyoPPT = async (topic, questions) => {
 export const generatePungiyoPDF = async (topic, questions, grade) => {
     const scores = getPungiyoScores(questions.length, grade);
     await renderPagesToPdf(getPungiyoPages(topic, questions, grade, scores), {
-        orientation: 'p',
+        orientation: 'l', // 가로 A4 한 장 = 반쪽 학습지 2부 (가운데 잘라 2명이 사용)
         fileName: `${topic}_뻥이요_학습지.pdf`
     });
 };
