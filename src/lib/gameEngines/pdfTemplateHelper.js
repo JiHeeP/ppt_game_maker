@@ -138,7 +138,8 @@ export const getBingoPages = (topic, questions) => {
 };
 
 /* ------------------------------------------------------------------ */
-/* 고고 전진: 6단계. 18문항 이하는 한 장, 많으면 두 장(1~3 / 4~6단계)     */
+/* 고고 전진: 6단계. 가로 A4 한 장에 같은 학습지 2부(가운데 잘라 2명이 사용) */
+/* 12문항 이하는 한 장, 많으면 두 장(1~3 / 4~6단계)                       */
 /* ------------------------------------------------------------------ */
 export const splitAdvanceStages = (questions) => {
     const n = questions.length;
@@ -149,35 +150,42 @@ export const splitAdvanceStages = (questions) => {
     return stages;
 };
 
-export const getAdvancePages = (topic, questions) => {
+// 반쪽에 다 들어가는지: 12문항 이하는 한 장, 많으면 두 장(1~3 / 4~6단계). PDF·편집용 PPT 공통
+export const getAdvanceGroups = (questions) => {
     const stages = splitAdvanceStages(questions);
-    const groups = questions.length <= 18
+    return questions.length <= 12
         ? [stages.map((s, i) => ({ s, no: i + 1 }))]
         : [stages.slice(0, 3).map((s, i) => ({ s, no: i + 1 })), stages.slice(3).map((s, i) => ({ s, no: i + 4 }))];
+};
+
+export const getAdvancePages = (topic, questions) => {
+    const groups = getAdvanceGroups(questions);
 
     return groups.map((group, pageIdx) => {
         const rows = group.reduce((sum, g) => sum + Math.max(1, g.s.length), 0);
-        const available = 1414 - 112 - 100 - 50 - (group.length - 1) * 18;
-        const rowH = Math.min(130, Math.floor(available / rows));
-        const fontSize = rowH >= 90 ? 23 : rowH >= 70 ? 20 : 17;
-        return portrait(`
-            ${header(`고고 전진 · ${topic}`, { name: pageIdx === 0, sub: groups.length > 1 ? `${pageIdx + 1} / ${groups.length}쪽` : '' })}
-            <div style="flex:1;display:flex;flex-direction:column;gap:18px;">
+        const gap = 12;
+        // 반쪽(세로 A5) 높이 1000px 안에: 여백 56 + 머리글 88 + 안내문 36
+        const available = 1000 - 56 - 88 - 36 - (group.length - 1) * gap;
+        const rowH = Math.min(80, Math.floor(available / rows));
+        const fontSize = rowH >= 60 ? 18 : rowH >= 48 ? 16 : 14;
+        const half = `
+            ${halfHeader(`고고 전진 · ${topic}`, { name: pageIdx === 0, sub: groups.length > 1 ? `${pageIdx + 1} / ${groups.length}쪽` : '' })}
+            <div style="flex:1;display:flex;flex-direction:column;gap:${gap}px;">
                 ${group.map(({ s, no }) => `
                     <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
                         ${(s.length ? s : [{ question: '' }]).map((q, qi) => `
                             <tr style="height:${rowH}px;">
-                                ${qi === 0 ? `<td rowspan="${Math.max(1, s.length)}" style="width:120px;border:2.5px solid #111;background:#f3f3f3;text-align:center;">
-                                    <div style="font-size:48px;font-weight:900;line-height:1;">${no}</div>
-                                    <div style="font-size:22px;font-weight:700;margin-top:4px;">단계</div>
+                                ${qi === 0 ? `<td rowspan="${Math.max(1, s.length)}" style="width:76px;border:2.5px solid #111;background:#f3f3f3;text-align:center;">
+                                    <div style="font-size:34px;font-weight:900;line-height:1;">${no}</div>
+                                    <div style="font-size:16px;font-weight:700;margin-top:3px;">단계</div>
                                 </td>` : ''}
-                                <td style="border:2px solid #111;padding:8px 16px;font-size:${fontSize}px;line-height:1.4;word-break:keep-all;">${esc(q.question)}</td>
+                                <td style="border:2px solid #111;padding:4px 10px;font-size:${fontSize}px;line-height:1.35;word-break:keep-all;">${esc(q.question)}</td>
                                 <td style="width:34%;border:2px solid #111;"></td>
                             </tr>`).join('')}
                     </table>`).join('')}
             </div>
-            ${footer('주사위를 굴려 단계를 나아가고, 멈춘 단계의 문제를 풀어 오른쪽 칸에 답을 적으세요.')}
-        `);
+            <div style="flex-shrink:0;margin-top:10px;font-size:13px;color:#555;text-align:center;">주사위를 굴려 단계를 나아가고, 멈춘 단계의 문제를 풀어 오른쪽 칸에 답을 적으세요.</div>`;
+        return twoUpLandscape(half);
     });
 };
 
