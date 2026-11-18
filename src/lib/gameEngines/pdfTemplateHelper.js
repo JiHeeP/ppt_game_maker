@@ -56,6 +56,30 @@ const header = (title, { name = true, sub = '' } = {}) => `
 const footer = (text) => `
     <div style="flex-shrink:0;margin-top:14px;font-size:15px;color:#555;text-align:center;">${esc(text)}</div>`;
 
+/* 반쪽(세로 A5) 학습지용 작은 머리글: 제목 한 줄 + 번호·이름 칸 한 줄 */
+const halfHeader = (title, { name = true, sub = '' } = {}) => `
+    <div style="border-bottom:3px solid #111;padding-bottom:8px;margin-bottom:14px;flex-shrink:0;height:74px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:flex-end;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;">
+            <div style="font-size:26px;font-weight:900;line-height:1.2;word-break:keep-all;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${esc(title)}</div>
+            ${sub ? `<div style="font-size:15px;font-weight:700;color:#555;white-space:nowrap;">${esc(sub)}</div>` : ''}
+        </div>
+        ${name ? `<div style="font-size:17px;font-weight:700;text-align:right;margin-top:6px;white-space:nowrap;">번호 ______ &nbsp; 이름 ____________</div>` : ''}
+    </div>`;
+
+/**
+ * 모아찍기: 가로 A4(1414 x 1000) 한 장에 같은 반쪽 학습지(세로 A5, 707 x 1000)를 두 번 찍는다.
+ * 가운데 점선을 따라 자르면 학생 2명이 한 부씩 쓴다. half 는 반쪽 안에 들어갈 HTML.
+ */
+export const twoUpLandscape = (half) => {
+    const pane = `<div style="width:707px;height:1000px;padding:28px 34px;box-sizing:border-box;display:flex;flex-direction:column;overflow:hidden;">${half}</div>`;
+    return `
+    <div style="width:1414px;height:1000px;background:#fff;color:#111;font-family:${FONT_STACK};display:flex;position:relative;">
+        ${pane}${pane}
+        <div style="position:absolute;left:706px;top:0;height:1000px;border-left:2px dashed #9aa0a6;"></div>
+        <div style="position:absolute;left:707px;top:6px;transform:translateX(-50%);background:#fff;padding:2px 0;font-size:13px;color:#9aa0a6;writing-mode:vertical-rl;letter-spacing:2px;">자르는 선</div>
+    </div>`;
+};
+
 /* ------------------------------------------------------------------ */
 /* 땅따먹기: 가로 A4 한 장, 8 x 6 = 48칸                                 */
 /* ------------------------------------------------------------------ */
@@ -114,7 +138,8 @@ export const getBingoPages = (topic, questions) => {
 };
 
 /* ------------------------------------------------------------------ */
-/* 고고 전진: 6단계. 18문항 이하는 한 장, 많으면 두 장(1~3 / 4~6단계)     */
+/* 고고 전진: 6단계. 가로 A4 한 장에 같은 학습지 2부(가운데 잘라 2명이 사용) */
+/* 12문항 이하는 한 장, 많으면 두 장(1~3 / 4~6단계)                       */
 /* ------------------------------------------------------------------ */
 export const splitAdvanceStages = (questions) => {
     const n = questions.length;
@@ -125,40 +150,48 @@ export const splitAdvanceStages = (questions) => {
     return stages;
 };
 
-export const getAdvancePages = (topic, questions) => {
+// 반쪽에 다 들어가는지: 12문항 이하는 한 장, 많으면 두 장(1~3 / 4~6단계). PDF·편집용 PPT 공통
+export const getAdvanceGroups = (questions) => {
     const stages = splitAdvanceStages(questions);
-    const groups = questions.length <= 18
+    return questions.length <= 12
         ? [stages.map((s, i) => ({ s, no: i + 1 }))]
         : [stages.slice(0, 3).map((s, i) => ({ s, no: i + 1 })), stages.slice(3).map((s, i) => ({ s, no: i + 4 }))];
+};
+
+export const getAdvancePages = (topic, questions) => {
+    const groups = getAdvanceGroups(questions);
 
     return groups.map((group, pageIdx) => {
         const rows = group.reduce((sum, g) => sum + Math.max(1, g.s.length), 0);
-        const available = 1414 - 112 - 100 - 50 - (group.length - 1) * 18;
-        const rowH = Math.min(130, Math.floor(available / rows));
-        const fontSize = rowH >= 90 ? 23 : rowH >= 70 ? 20 : 17;
-        return portrait(`
-            ${header(`고고 전진 · ${topic}`, { name: pageIdx === 0, sub: groups.length > 1 ? `${pageIdx + 1} / ${groups.length}쪽` : '' })}
-            <div style="flex:1;display:flex;flex-direction:column;gap:18px;">
+        const gap = 12;
+        // 반쪽(세로 A5) 높이 1000px 안에: 여백 56 + 머리글 88 + 안내문 36
+        const available = 1000 - 56 - 88 - 36 - (group.length - 1) * gap;
+        const rowH = Math.min(80, Math.floor(available / rows));
+        const fontSize = rowH >= 60 ? 18 : rowH >= 48 ? 16 : 14;
+        const half = `
+            ${halfHeader(`고고 전진 · ${topic}`, { name: pageIdx === 0, sub: groups.length > 1 ? `${pageIdx + 1} / ${groups.length}쪽` : '' })}
+            <div style="flex:1;display:flex;flex-direction:column;gap:${gap}px;">
                 ${group.map(({ s, no }) => `
                     <table style="width:100%;border-collapse:collapse;table-layout:fixed;">
                         ${(s.length ? s : [{ question: '' }]).map((q, qi) => `
                             <tr style="height:${rowH}px;">
-                                ${qi === 0 ? `<td rowspan="${Math.max(1, s.length)}" style="width:120px;border:2.5px solid #111;background:#f3f3f3;text-align:center;">
-                                    <div style="font-size:48px;font-weight:900;line-height:1;">${no}</div>
-                                    <div style="font-size:22px;font-weight:700;margin-top:4px;">단계</div>
+                                ${qi === 0 ? `<td rowspan="${Math.max(1, s.length)}" style="width:76px;border:2.5px solid #111;background:#f3f3f3;text-align:center;">
+                                    <div style="font-size:34px;font-weight:900;line-height:1;">${no}</div>
+                                    <div style="font-size:16px;font-weight:700;margin-top:3px;">단계</div>
                                 </td>` : ''}
-                                <td style="border:2px solid #111;padding:8px 16px;font-size:${fontSize}px;line-height:1.4;word-break:keep-all;">${esc(q.question)}</td>
+                                <td style="border:2px solid #111;padding:4px 10px;font-size:${fontSize}px;line-height:1.35;word-break:keep-all;">${esc(q.question)}</td>
                                 <td style="width:34%;border:2px solid #111;"></td>
                             </tr>`).join('')}
                     </table>`).join('')}
             </div>
-            ${footer('주사위를 굴려 단계를 나아가고, 멈춘 단계의 문제를 풀어 오른쪽 칸에 답을 적으세요.')}
-        `);
+            <div style="flex-shrink:0;margin-top:10px;font-size:13px;color:#555;text-align:center;">주사위를 굴려 단계를 나아가고, 멈춘 단계의 문제를 풀어 오른쪽 칸에 답을 적으세요.</div>`;
+        return twoUpLandscape(half);
     });
 };
 
 /* ------------------------------------------------------------------ */
-/* 뻥이요!: 줄 수 = 문항 수 (한 쪽 최대 12줄). 보너스는 줄마다 미리 인쇄   */
+/* 뻥이요!: 가로 A4 한 장에 같은 학습지 2부(왼쪽·오른쪽). 가운데를 잘라 2명이 쓴다 */
+/* 줄 수 = 문항 수 (반쪽 최대 15줄). 보너스는 줄마다 미리 인쇄              */
 /* (학생이 자신 있는 답을 높은 보너스 줄에 적는 전략 놀이라서 보너스를 보이게 둔다) */
 /* ------------------------------------------------------------------ */
 export const getPungiyoScores = (count, grade = '') => {
@@ -172,17 +205,21 @@ export const getPungiyoScores = (count, grade = '') => {
 
 export const getPungiyoPages = (topic, questions, grade, scores = getPungiyoScores(questions.length, grade)) => {
     const n = Math.max(1, questions.length);
-    const pages = chunk(Array.from({ length: n }, (_, i) => i), 12);
-    const th = (label, w, color = '#111') => `<th style="border:2px solid #111;padding:10px 4px;font-size:21px;width:${w};color:${color};">${label}</th>`;
+    // 반쪽 한 면에 최대 15줄. 넘치면 쪽마다 줄 수를 고르게 나눈다 (예: 20문항 → 10 + 10)
+    const pageCount = Math.ceil(n / 15);
+    const pages = chunk(Array.from({ length: n }, (_, i) => i), Math.ceil(n / pageCount));
+    const th = (label, w, color = '#111') => `<th style="border:2px solid #111;padding:8px 2px;font-size:18px;width:${w};color:${color};white-space:nowrap;">${label}</th>`;
     return pages.map((rows, pageIdx) => {
         const isLast = pageIdx === pages.length - 1;
-        const available = 1414 - 112 - 100 - 56 - (isLast ? 84 : 0);
-        const rowH = Math.min(110, Math.floor(available / rows.length));
-        return portrait(`
-            ${header(`뻥이요! · ${topic}`, { name: pageIdx === 0, sub: pages.length > 1 ? `${pageIdx + 1} / ${pages.length}쪽` : '' })}
+        // 반쪽(세로 A5) 높이 1000px 안에: 여백 56 + 머리글 96 + 표 제목줄 44 + 합계줄
+        const totalH = isLast ? 64 : 0;
+        const available = 1000 - 56 - 96 - 44 - totalH - 8;
+        const rowH = Math.min(80, Math.floor(available / rows.length));
+        const half = `
+            ${halfHeader(`뻥이요! · ${topic}`, { name: pageIdx === 0, sub: pages.length > 1 ? `${pageIdx + 1} / ${pages.length}쪽` : '' })}
             <table style="width:100%;border-collapse:collapse;border:3px solid #111;table-layout:fixed;">
                 <thead><tr style="background:#f2f2f2;">
-                    ${th('문제', '30%')}${th('답', '28%')}${th('점수', '12%')}${th('뻥이요', '13%', '#d35400')}${th('최종 점수', '17%')}
+                    ${th('문제', '29%')}${th('답', '27%')}${th('점수', '13%')}${th('뻥이요', '14%', '#d35400')}${th('최종 점수', '17%')}
                 </tr></thead>
                 <tbody>
                     ${rows.map(i => `
@@ -190,16 +227,16 @@ export const getPungiyoPages = (topic, questions, grade, scores = getPungiyoScor
                             <td style="border:2px solid #111;"></td>
                             <td style="border:2px solid #111;"></td>
                             <td style="border:2px solid #111;"></td>
-                            <td style="border:2px solid #111;text-align:center;font-size:30px;font-weight:900;background:#fff6e5;">${scores[i] || ''}</td>
+                            <td style="border:2px solid #111;text-align:center;font-size:26px;font-weight:900;background:#fff6e5;">${scores[i] || ''}</td>
                             <td style="border:2px solid #111;"></td>
                         </tr>`).join('')}
-                    ${isLast ? `<tr style="height:84px;">
-                        <td colspan="4" style="border:2px solid #111;text-align:center;font-size:28px;font-weight:900;background:#f2f2f2;">누적 합계 점수</td>
+                    ${isLast ? `<tr style="height:${totalH}px;">
+                        <td colspan="4" style="border:2px solid #111;text-align:center;font-size:24px;font-weight:900;background:#f2f2f2;">누적 합계 점수</td>
                         <td style="border:2px solid #111;"></td>
                     </tr>` : ''}
                 </tbody>
-            </table>
-        `);
+            </table>`;
+        return twoUpLandscape(half);
     });
 };
 
